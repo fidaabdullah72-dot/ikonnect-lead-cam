@@ -1,0 +1,303 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens. Components only use these (bg-surface, text-muted, …) so the
+   light and dark themes stay in sync.
+   --------------------------------------------------------------------------- */
+:root {
+  --background: #f3f3f6;
+  --panel: #fafafb;
+  --surface: #ffffff;
+  --surface-2: #f4f4f7;
+  --surface-3: #ececf1;
+  --overlay: rgba(12, 12, 18, 0.42);
+  --border: #e6e6eb;
+  --border-strong: #d6d6de;
+  --foreground: #0d0d12;
+  --muted: #5d5d6c;
+  --subtle: #8c8c9a;
+
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(79, 70, 229, 0.08);
+  --primary-soft-border: rgba(79, 70, 229, 0.22);
+  --ring: rgba(79, 70, 229, 0.38);
+
+  --success: #0c9467;
+  --success-soft: rgba(12, 148, 103, 0.1);
+  --warning: #b86e00;
+  --warning-soft: rgba(217, 140, 0, 0.12);
+  --danger: #dc2648;
+  --danger-soft: rgba(220, 38, 72, 0.09);
+  --info: #2563eb;
+  --info-soft: rgba(37, 99, 235, 0.09);
+  --whatsapp: #128c4a;
+  --whatsapp-bright: #25d366;
+  --whatsapp-soft: rgba(37, 211, 102, 0.12);
+
+  --shadow-sm: 0 1px 2px rgba(16, 16, 32, 0.05);
+  --shadow-md: 0 1px 2px rgba(16, 16, 32, 0.04), 0 4px 16px -4px rgba(16, 16, 32, 0.08);
+  --shadow-lg: 0 2px 4px rgba(16, 16, 32, 0.04), 0 16px 48px -12px rgba(16, 16, 32, 0.22);
+
+  --chart-1: #4f46e5;
+  --chart-2: #0ea5e9;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #ec4899;
+  --grid: #ececf1;
+  /* Validated (dataviz validator): ordinal indigo ramp light->dark, categorical 3 */
+  --ord-1: #818cf8;
+  --ord-2: #6366f1;
+  --ord-3: #4338ca;
+  --ord-4: #312e81;
+  --cat-1: #2a78d6;
+  --cat-2: #eb6834;
+  --cat-3: #1baf7a;
+
+  color-scheme: light;
+}
+
+.dark {
+  --background: #070709;
+  --panel: #0b0b0e;
+  --surface: #111116;
+  --surface-2: #16161d;
+  --surface-3: #1e1e27;
+  --overlay: rgba(0, 0, 0, 0.62);
+  --border: rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --foreground: #f3f3f6;
+  --muted: #a2a2b0;
+  --subtle: #6c6c7b;
+
+  --primary: #7c7cf8;
+  --primary-hover: #9090fb;
+  --primary-foreground: #ffffff;
+  --primary-soft: rgba(124, 124, 248, 0.13);
+  --primary-soft-border: rgba(124, 124, 248, 0.3);
+  --ring: rgba(124, 124, 248, 0.5);
+
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.12);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --danger: #fb7185;
+  --danger-soft: rgba(251, 113, 133, 0.12);
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.12);
+  --whatsapp: #3ddc84;
+  --whatsapp-bright: #25d366;
+  --whatsapp-soft: rgba(37, 211, 102, 0.13);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.3), 0 24px 64px -16px rgba(0, 0, 0, 0.7);
+
+  --chart-1: #7c7cf8;
+  --chart-2: #38bdf8;
+  --chart-3: #34d399;
+  --chart-4: #fbbf24;
+  --chart-5: #f472b6;
+  --grid: rgba(255, 255, 255, 0.06);
+  --ord-1: #4338ca;
+  --ord-2: #6366f1;
+  --ord-3: #818cf8;
+  --ord-4: #c7d2fe;
+  --cat-1: #3987e5;
+  --cat-2: #d95926;
+  --cat-3: #199e70;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-panel: var(--panel);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-overlay: var(--overlay);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-border: var(--primary-soft-border);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-whatsapp: var(--whatsapp);
+  --color-whatsapp-bright: var(--whatsapp-bright);
+  --color-whatsapp-soft: var(--whatsapp-soft);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+
+  --animate-fade-in: fade-in 160ms ease-out;
+  --animate-scale-in: scale-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-in-right: slide-in-right 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-up: slide-up 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-pulse-ring: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes scale-in {
+    from { opacity: 0; transform: scale(0.97) translateY(4px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  @keyframes slide-in-right {
+    from { transform: translateX(24px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes slide-up {
+    from { transform: translateY(6px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
+  @keyframes nav-progress {
+    from { transform: scaleX(0.04); }
+    12% { transform: scaleX(0.38); }
+    45% { transform: scaleX(0.72); }
+    to { transform: scaleX(0.95); }
+  }
+  @keyframes pulse-ring {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+  }
+}
+
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  ::selection {
+    background: var(--primary-soft-border);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--subtle);
+  }
+
+  /* Quiet scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .brand-gradient {
+    background-image: linear-gradient(135deg, #4f46e5 0%, #2563eb 55%, #0891b2 100%);
+  }
+  .brand-text {
+    background-image: linear-gradient(120deg, #6366f1 0%, #3b82f6 55%, #06b6d4 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .nav-progress {
+    transform-origin: left center;
+    animation: nav-progress 10s cubic-bezier(0.08, 0.6, 0.2, 1) forwards;
+  }
+  .skeleton {
+    background-image: linear-gradient(90deg, var(--surface-2) 0px, var(--surface-3) 120px, var(--surface-2) 240px);
+    background-size: 800px 100%;
+    animation: var(--animate-shimmer);
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, var(--grid) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-progress {
+    animation: none;
+    transform: scaleX(0.7);
+  }
+}

@@ -1,0 +1,86 @@
+# BatSols on a single server (Oracle Cloud Always Free, or any Linux VM with Docker).
+# Settings come from deploy/oracle/.env (copy .env.example). Start/update with:
+#   docker compose -f deploy/oracle/docker-compose.yml --env-file deploy/oracle/.env up -d --build
+name: batsols
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: '10m', max-file: '5' }
+
+services:
+  web:
+    image: batsols-web:latest
+    build:
+      context: ../..
+      dockerfile: crm-dashboard/Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?set SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_APP_URL: https://${DOMAIN:?set DOMAIN}
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?set SUPABASE_SERVICE_ROLE_KEY}
+      DISABLE_SIGNUP: ${DISABLE_SIGNUP:-false}
+    init: true
+    restart: unless-stopped
+    logging: *logging
+
+  # WhatsApp sessions, campaigns, lead finder, automations. Exactly one instance.
+  engine:
+    image: batsols-engine:latest
+    build:
+      context: ../..
+      dockerfile: engine/Dockerfile
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+      SCRAPER_BROWSER: ${SCRAPER_BROWSER:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    init: true
+    shm_size: 1gb # Chromium (lead finder) needs more than Docker's 64 MB default
+    stop_grace_period: 30s # lets WhatsApp sessions close cleanly
+    restart: unless-stopped
+    logging: *logging
+
+  # Optional: Google Maps browser searches only, on another server than the engine
+  # (that engine then runs with SCRAPER_BROWSER=false). Start it by name:
+  #   docker compose ... up -d scraper
+  scraper:
+    image: batsols-scraper:latest
+    profiles: [scraper]
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      ENGINE_ROLE: scraper
+      SCRAPER_BROWSER: 'true'
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    init: true
+    # Searches are background work: when the CPU is busy, the dashboard goes first (default share is 1024).
+    cpu_shares: 256
+    shm_size: 512mb
+    restart: unless-stopped
+    logging: *logging
+
+  # HTTPS (automatic Let's Encrypt certificates) in front of the web app.
+  caddy:
+    image: caddy:2
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [web]
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  caddy_data:
+  caddy_config:

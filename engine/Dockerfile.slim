@@ -1,0 +1,27 @@
+# BatSols engine for small servers (e.g. Oracle's 1 GB AMD micro).
+# Default: no Chromium — WhatsApp, campaigns, inbox, automations, Places API searches.
+# --build-arg WITH_CHROMIUM=1 adds just Chromium, for a scraper-only engine
+# (ENGINE_ROLE=scraper) that runs Google Maps browser searches on another server.
+FROM node:22-bookworm-slim
+
+ARG WITH_CHROMIUM=0
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json packages/shared/
+COPY engine/package.json engine/
+# --include=dev: the bundler (esbuild) is a dev dependency.
+RUN npm ci --workspace=@batsols/engine --workspace=@batsols/shared --include-workspace-root=false --include=dev --no-audit --no-fund
+
+COPY packages/shared packages/shared
+COPY engine engine
+RUN npm run build -w @batsols/engine
+RUN if [ "$WITH_CHROMIUM" = "1" ]; then \
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0 npx playwright install --with-deps --only-shell chromium && rm -rf /var/lib/apt/lists/* /root/.npm; \
+    fi
+
+ENV NODE_ENV=production SCRAPER_BROWSER=false
+USER node
+CMD ["node", "engine/dist/index.js"]

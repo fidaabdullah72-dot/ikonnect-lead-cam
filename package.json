@@ -1,0 +1,29 @@
+{
+  "name": "batsols",
+  "private": true,
+  "type": "module",
+  "description": "BatSols CRM \u2014 Google Maps lead generation + WhatsApp campaigns for teams",
+  "workspaces": [
+    "packages/*",
+    "crm-dashboard",
+    "engine"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n web,engine -c magenta,cyan \"npm run dev -w crm-dashboard\" \"npm run dev -w @batsols/engine\"",
+    "dev:web": "npm run dev -w crm-dashboard",
+    "dev:engine": "npm run dev -w @batsols/engine",
+    "build": "npm run build -w crm-dashboard && npm run build -w @batsols/engine",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && npm run test:db",
+    "test:db": "vitest run --root supabase/tests"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "concurrently": "^10.0.5",
+    "typescript": "5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

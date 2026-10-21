@@ -1,0 +1,179 @@
+PHASE 2: COMPREHENSIVE CRM DASHBOARD & WHATSAPP AUTOMATION INTEGRATION PLAN
+
+================================================================================
+1. EXECUTIVE SUMMARY & PHASE 2 OBJECTIVES
+================================================================================
+Phase 2 of the Lead CRM project transforms the initial scraping and database 
+architecture into a fully functional, automated outbound sales engine. The core 
+focus of this phase is the seamless integration of a WhatsApp Automation module 
+directly into the CRM dashboard. This will allow for highly targeted, automated, 
+and trackable outreach campaigns based on the data scraped from Google Maps.
+
+Key Objectives:
+- Seamlessly integrate the `whatsapp-automation` folder/module with the CRM.
+- Implement robust routing logic to send tailored pitches based on website presence.
+- Build a comprehensive, all-in-one control panel (dashboard) for managing 
+  scraping tasks, lead pipelines, and messaging limits.
+- Ensure strict adherence to API rate limits and provide clear analytics on 
+  message delivery statuses.
+
+================================================================================
+2. ARCHITECTURE & SEAMLESS INTEGRATION MODEL
+================================================================================
+The architecture will operate on a modular, event-driven basis to ensure 
+seamless data flow from Scraping -> Database -> CRM -> WhatsApp Automation.
+
+2.1 Data Flow Pipeline
+[Scraping Agent] ---> (Inserts/Upserts) ---> [Supabase]
+                                                |
+                                                v
+[CRM Dashboard (Frontend)] <--- (Fetches) <--- [Supabase]
+      |
+      | (Triggers via API / Webhook)
+      v
+[WhatsApp Automation Module (Backend)] ---> (Sends Message) ---> [Client WhatsApp]
+
+2.2 The `whatsapp-automation` Module
+This module will run as an independent microservice or serverless function 
+that listens for commands from the CRM Dashboard. 
+- It will utilize libraries like `whatsapp-web.js` or the official WhatsApp Cloud API.
+- It will expose endpoints such as `/api/whatsapp/send`, `/api/whatsapp/status`, 
+  and `/api/whatsapp/campaign/start`.
+
+================================================================================
+3. TARGETED OUTREACH STRATEGY
+================================================================================
+The core value proposition relies on differentiating the pitch based on the 
+lead's current digital footprint.
+
+3.1 Pipeline A: "Has Website" -> Chatbot Pitch
+- Target: Businesses stored in `leads_with_website`.
+- Logic: The system recognizes the `website_url` field is populated.
+- Pitch Strategy: 
+  "Hi [Business Name], we reviewed your website at [URL]. It looks great, but we 
+  noticed you don't have an automated way to capture leads 24/7. We specialize 
+  in building custom AI chatbots that integrate directly into websites like yours 
+  to increase conversions by 40%. Would you be open to a quick demo?"
+- Customization: The module dynamically inserts their actual website URL into 
+  the message to increase personalization and open rates.
+
+3.2 Pipeline B: "No Website" -> Web Development Pitch
+- Target: Businesses stored in `leads_without_website`.
+- Logic: The system recognizes the lack of a website URL.
+- Pitch Strategy: 
+  "Hi [Business Name], we were looking for your services in [Location] and couldn't 
+  find a website for your business. In today's digital age, a professional website 
+  is the fastest way to build trust and get more clients. We build premium, 
+  affordable websites for [Industry] businesses. Can we send you some examples?"
+
+================================================================================
+4. CRM DASHBOARD: COMPREHENSIVE FEATURE SET
+================================================================================
+The dashboard is the central nervous system of the application. It must be 
+intuitive, powerful, and contain absolutely every feature needed to run the agency.
+
+4.1 Master Control Panel (Scraping Controls)
+The dashboard will have a dedicated "Scraping Engine" tab.
+- Feature: [START SCRAPING] Button. Triggers the Python agent in the background.
+- Feature: [STOP SCRAPING] Button. Safely halts the agent and saves state.
+- Feature: Live Terminal/Log View. A small window showing real-time logs of the 
+  scraper ("Found: ABC Clinic...", "Duplicate skipped...", "Inserted: XYZ Real Estate").
+- Feature: Target Configuration. Input fields on the dashboard to change the 
+  search query (e.g., "Gyms in Lahore") without touching the code.
+
+4.2 Advanced Lead Management & Kanban Board
+- Feature: Drag-and-Drop Pipeline. Visual columns (New -> Messaged -> Replied -> 
+  Meeting Booked -> Closed).
+- Feature: Seamless transition. When a lead is dragged from "New" to "Messaged", 
+  it can auto-trigger the WhatsApp automation module to send the first message.
+- Feature: Manual Send. A "Send WhatsApp" button next to every lead for manual 
+  control.
+- Feature: Bulk Actions. Select 50 leads and click "Add to Campaign".
+
+4.3 Automation Limits & Safety Controls (CRITICAL)
+To prevent WhatsApp bans, the system must have strict limits configurable via UI.
+- Feature: Daily Sending Limit Input (e.g., set to 50 messages/day).
+- Feature: Delay Between Messages (e.g., random delay between 45 to 120 seconds).
+- Feature: Limit Tracker. A visual progress bar showing "Messages Sent Today: 42/50".
+- Feature: Auto-Pause. If the limit is reached, the campaign automatically pauses 
+  and queues remaining leads for the next day.
+
+4.4 Real-Time Analytics & Tracking
+- Metric: Leads Scraped Today / Total Leads.
+- Metric: Messages Sent / Messages Pending / Messages Failed.
+- Metric: Response Rate (if using official API with webhooks).
+- Metric: Pipeline Value (estimated revenue based on closed deals).
+- View: Detailed logs of exactly which number received which message at what time.
+
+================================================================================
+5. DATABASE SCHEMA UPDATES FOR PHASE 2
+================================================================================
+To support automation tracking, Supabase tables need additional fields.
+
+Additions to both tables:
+- `whatsapp_status`: (Enum: 'uncontacted', 'queued', 'sent', 'delivered', 'read', 'failed')
+- `last_messaged_at`: (Timestamp) - crucial for ensuring we don't spam them.
+- `campaign_id`: (UUID) - to track which campaign the lead belongs to.
+- `automation_notes`: (Text) - store any error messages (e.g., "Number not on WA").
+
+================================================================================
+6. SEAMLESS INTEGRATION WALKTHROUGH (USER JOURNEY)
+================================================================================
+1. User logs into CRM.
+2. User goes to "Scraper" tab, enters "Dentists in Karachi", clicks [START].
+3. User watches the live count go up. They click [STOP] after finding 100 leads.
+4. User goes to "Campaigns" tab. 
+5. User creates a new campaign: "Dentist Chatbot Push".
+6. User selects the filter: "Leads With Website" + "Uncontacted".
+7. User sets limits: "Send 20 a day, 1 minute apart".
+8. User clicks [LAUNCH CAMPAIGN].
+9. The CRM Dashboard updates in real-time. The `whatsapp-automation` module 
+   begins picking leads from the queue, sending personalized messages, and 
+   updating the `whatsapp_status` in Supabase back to "sent".
+10. The user views the Kanban board and sees leads automatically moving into 
+    the "Contacted" column.
+
+================================================================================
+7. UI / UX DESIGN PRINCIPLES
+================================================================================
+- Dark Mode by default for a premium feel.
+- Glassmorphism UI elements for the sidebar and control panels.
+- Toast notifications (pop-ups in corner) for system alerts (e.g., "Message 
+  successfully sent to ABC Clinic", "Daily limit reached. Pausing campaign.").
+- Clean, searchable, and sortable data tables (DataGrid) with pagination.
+
+================================================================================
+8. DETAILED COMPONENT BREAKDOWN (FRONTEND)
+================================================================================
+- `Sidebar`: Navigation between Dashboard, Pipeline, Campaigns, Scraper, Settings.
+- `StatCards`: Top row showing vital statistics.
+- `LeadsTable`: Highly filterable table. Filter by city, status, website presence.
+- `WhatsAppConfigModal`: A popup to configure message templates and variables 
+  (e.g., {{business_name}}).
+- `ScraperConsole`: A dedicated component managing the WebSocket connection to 
+  the Python backend to display real-time scraping logs.
+
+================================================================================
+9. ERROR HANDLING & RESILIENCE
+================================================================================
+- Invalid Numbers: If the WhatsApp module detects a number is a landline or 
+  not registered on WhatsApp, it marks the lead as 'failed - no WA' in Supabase 
+  and immediately moves to the next lead without crashing.
+- Dashboard Disconnects: The dashboard does not need to stay open for the 
+  campaign to run. Campaigns run on the backend/server. The dashboard just reads 
+  the current state.
+- Rate Limit Backoff: If WhatsApp returns a rate limit warning, the system 
+  automatically pauses for 1 hour before resuming.
+
+================================================================================
+10. CONCLUSION & NEXT STEPS
+================================================================================
+This plan ensures a highly organized, robust, and scalable Lead CRM. By keeping 
+the scraping, database, and WhatsApp automation tightly coupled but architecturally 
+independent, the system will be resilient. 
+
+To proceed with development based on this plan:
+1. Initialize the Next.js/React frontend with Tailwind CSS.
+2. Build the Supabase connection and update the schema with WhatsApp tracking fields.
+3. Integrate the existing `whatsapp-automation` scripts into a controllable API.
+4. Build the UI dashboard components (Kanban, Tables, Scraper Controls).

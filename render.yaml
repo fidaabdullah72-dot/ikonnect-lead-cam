@@ -1,0 +1,46 @@
+# Render Blueprint — deploy with "New > Blueprint" and point it at this repo.
+# Fill the secret values in the Render dashboard (sync: false).
+services:
+  - type: web
+    name: batsols-web
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci && npm run build -w crm-dashboard
+    startCommand: npm run start -w crm-dashboard
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: DISABLE_SIGNUP
+        value: "false"
+
+  # Must be always-on (free instances sleep and would drop WhatsApp sessions).
+  - type: worker
+    name: batsols-engine
+    runtime: docker
+    plan: starter
+    region: singapore
+    dockerContext: .
+    dockerfilePath: ./engine/Dockerfile
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: SCRAPER_BROWSER
+        value: "true"
+      - key: LOG_LEVEL
+        value: info

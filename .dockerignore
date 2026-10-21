@@ -1,0 +1,12 @@
+**/node_modules
+**/.next
+**/dist
+**/.env
+**/.env.*
+legacy
+server
+Whatsapp Automation
+crm_phase2_detailed_plan.txt
+supabase/.temp
+supabase/.branches
+.git
