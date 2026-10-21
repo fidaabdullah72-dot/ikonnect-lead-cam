@@ -433,7 +433,7 @@ function NewSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
           <Field label="Tag new leads" optional>
             <TagInput value={tags} onChange={setTags} placeholder="e.g. q4-dentists" />
           </Field>
-          {provider === 'places' && <p className="text-xs text-subtle">Needs a Google Places API key (Settings → Integrations). Duplicates already in CoreNexa are skipped automatically.</p>}
+          {provider === 'places' && <p className="text-xs text-subtle">Needs a Google Places API key (Settings → Integrations). Duplicates already in BatSols are skipped automatically.</p>}
         </DialogBody>
         <DialogFooter>
           <span className="mr-auto text-[13px] text-muted">

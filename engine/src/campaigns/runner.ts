@@ -481,7 +481,7 @@ export class CampaignRunner {
         await notify(c.workspace_id, [account.owner_id, c.created_by], {
           type: 'campaign_paused',
           title: `${account.label} hit WhatsApp's rate limit`,
-          body: 'CoreNexa paused this number for an hour to protect it.',
+          body: 'BatSols paused this number for an hour to protect it.',
           link: `/campaigns/${c.id}`,
         });
         return;

@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'sw
 const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono-face', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: { default: 'CoreNexa', template: '%s · CoreNexa' },
+  title: { default: 'BatSols', template: '%s · BatSols' },
   description: 'Find leads on Google Maps and run WhatsApp campaigns with your whole team.',
 };
 

@@ -605,7 +605,7 @@ class SearchRun {
     const inserted = await this.save(outcome.places, step);
     this.add(
       'success',
-      `“${step.label}”: ${outcome.listed} listed · ${inserted} new lead${inserted === 1 ? '' : 's'}${tally.saved ? ` · ${tally.saved} already in CoreNexa` : ''}`,
+      `“${step.label}”: ${outcome.listed} listed · ${inserted} new lead${inserted === 1 ? '' : 's'}${tally.saved ? ` · ${tally.saved} already in BatSols` : ''}`,
     );
     return { listed: outcome.listed, fresh: outcome.places.length, inserted, exhausted: outcome.exhausted };
   }
@@ -663,7 +663,7 @@ class SearchRun {
       if (error) {
         if (error.code === '23505') {
           stats.duplicates++;
-          this.add('info', `Already in CoreNexa: ${p.name}`);
+          this.add('info', `Already in BatSols: ${p.name}`);
         } else {
           stats.errors++;
           this.add('error', `Couldn’t save ${p.name}: ${error.message}`);
@@ -672,7 +672,7 @@ class SearchRun {
       }
       if (!saved?.length) {
         stats.duplicates++;
-        this.add('info', `Already in CoreNexa: ${p.name}`);
+        this.add('info', `Already in BatSols: ${p.name}`);
         continue;
       }
       inserted++;

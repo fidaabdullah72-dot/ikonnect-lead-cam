@@ -55,7 +55,7 @@ export default function SignupPage() {
   return (
     <>
       <h2 className="text-2xl font-semibold tracking-[-0.025em]">Create your workspace</h2>
-      <p className="mt-1.5 text-[13.5px] text-muted">Set up CoreNexa for your team in under a minute.</p>
+      <p className="mt-1.5 text-[13.5px] text-muted">Set up BatSols for your team in under a minute.</p>
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
         {error && <Callout tone="danger">{error}</Callout>}
         {notice && <Callout tone="success">{notice}</Callout>}

@@ -119,7 +119,7 @@ export function ConnectDialog({ open, onOpenChange, account }: { open: boolean; 
             <DialogBody className="space-y-5">
               {!engine.online && (
                 <Callout tone="warning" title="The engine is offline">
-                  Codes come from the CoreNexa engine. Start it (or check your Render worker) before connecting.
+                  Codes come from the BatSols engine. Start it (or check your Render worker) before connecting.
                 </Callout>
               )}
               {!account && (
@@ -143,7 +143,7 @@ export function ConnectDialog({ open, onOpenChange, account }: { open: boolean; 
                 </Field>
               )}
               <Callout tone="info" title="Good to know">
-                The phone keeps working normally. CoreNexa is linked like WhatsApp Web, so messages you send show up on the phone too. Use numbers that have been active for a while: brand-new numbers get restricted faster.
+                The phone keeps working normally. BatSols is linked like WhatsApp Web, so messages you send show up on the phone too. Use numbers that have been active for a while: brand-new numbers get restricted faster.
               </Callout>
             </DialogBody>
             <DialogFooter>
@@ -168,7 +168,7 @@ export function ConnectDialog({ open, onOpenChange, account }: { open: boolean; 
                   </div>
                   <h3 className="mt-4 text-lg font-semibold">Connected</h3>
                   <p className="mt-1 text-[13.5px] text-muted">
-                    {live?.label} {live?.phone ? `(+${live.phone})` : ''} is linked. CoreNexa keeps it connected — even across restarts.
+                    {live?.label} {live?.phone ? `(+${live.phone})` : ''} is linked. BatSols keeps it connected — even across restarts.
                   </p>
                 </div>
               ) : gaveUp ? (

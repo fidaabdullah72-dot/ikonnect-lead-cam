@@ -227,7 +227,7 @@ export class WaSession {
         await notify(this.account.workspace_id, [this.account.owner_id, ...(await adminsOf(this.account.workspace_id))], {
           type: 'whatsapp_disconnected',
           title: `WhatsApp paused sending on “${this.account.label}”`,
-          body: `WhatsApp temporarily restricted new messages until ${until.toUTCString()}. CoreNexa pauses this number automatically.`,
+          body: `WhatsApp temporarily restricted new messages until ${until.toUTCString()}. BatSols pauses this number automatically.`,
           link: '/whatsapp',
         });
       }
@@ -324,7 +324,7 @@ export class WaSession {
           await this.halt({
             status: 'error',
             desired_state: 'disconnected',
-            last_error: 'Another session keeps taking over this device. Make sure only one CoreNexa engine is running, then reconnect.',
+            last_error: 'Another session keeps taking over this device. Make sure only one BatSols engine is running, then reconnect.',
           });
           return;
         }
@@ -368,7 +368,7 @@ export class WaSession {
       await notify(this.account.workspace_id, [this.account.owner_id], {
         type: 'whatsapp_disconnected',
         title: `“${this.account.label}” lost its connection`,
-        body: 'CoreNexa keeps retrying automatically. If it doesn’t recover, check that the phone has internet.',
+        body: 'BatSols keeps retrying automatically. If it doesn’t recover, check that the phone has internet.',
         link: '/whatsapp',
       });
     }
@@ -408,7 +408,7 @@ export class WaSession {
     const s = this.sock;
     if (s && this.phase === 'open') {
       try {
-        await s.logout('Logged out from CoreNexa');
+        await s.logout('Logged out from BatSols');
       } catch (e) {
         log.warn({ acc: this.accountId, err: errMsg(e) }, 'logout call failed');
       }

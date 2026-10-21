@@ -426,7 +426,7 @@ function Timeline({ items, loading, lead }: { items: TimelineItem[]; loading: bo
               <ArrowRightLeft className="size-3" />
             </span>
             <div className="pt-0.5 text-[13px] text-muted">
-              <span className="font-medium text-foreground">{a.actor_id ? name(a.actor_id) : 'CoreNexa'}</span> {activityText(a, name)}
+              <span className="font-medium text-foreground">{a.actor_id ? name(a.actor_id) : 'BatSols'}</span> {activityText(a, name)}
               <span className="text-subtle"> · {timeAgo(a.created_at)}</span>
             </div>
           </li>

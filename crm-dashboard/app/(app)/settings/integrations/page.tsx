@@ -59,7 +59,7 @@ export default function IntegrationsPage() {
   return (
     <div className="space-y-6">
       <Card>
-        <CardHeader icon={<ServerCog />} title="CoreNexa engine" description="Runs WhatsApp, campaigns, the lead finder and automations." />
+        <CardHeader icon={<ServerCog />} title="BatSols engine" description="Runs WhatsApp, campaigns, the lead finder and automations." />
         <CardContent className="flex flex-wrap items-center gap-4 text-[13px]">
           <Badge tone={engine.online ? 'success' : 'danger'} dot pulse={engine.online}>
             {engine.online ? 'Online' : 'Offline'}
@@ -93,7 +93,7 @@ export default function IntegrationsPage() {
 
       {can.admin && (
         <Card>
-          <CardHeader icon={<Sparkles />} title="Lead scoring" description="Every lead gets a 0–100 quality score (Hot 70+, Warm 40–69, Cold). Tell CoreNexa what a good lead looks like for you." />
+          <CardHeader icon={<Sparkles />} title="Lead scoring" description="Every lead gets a 0–100 quality score (Hot 70+, Warm 40–69, Cold). Tell BatSols what a good lead looks like for you." />
           <CardContent className="grid gap-4 sm:grid-cols-3">
             <Field label="You sell to businesses…">
               <NativeSelect value={scoring.website_target ?? 'any'} onChange={(e) => setScoring({ ...scoring, website_target: e.target.value as ScoringSettings['website_target'] })}>

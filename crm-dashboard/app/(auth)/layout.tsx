@@ -22,7 +22,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
               From Google Maps to <span className="brand-text">booked meetings</span>, on autopilot.
             </h1>
             <p className="mt-4 max-w-md text-[15px] text-muted">
-              CoreNexa finds local businesses, starts the conversation on WhatsApp, and keeps your whole team in sync.
+              BatSols finds local businesses, starts the conversation on WhatsApp, and keeps your whole team in sync.
             </p>
             <ul className="mt-10 space-y-5">
               {points.map(({ icon: Icon, title, text }) => (

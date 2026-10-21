@@ -203,7 +203,7 @@ function StepCard({
             </div>
           ))}
           {step.variants.length < 5 && (
-            <Tooltip content="A/B test: leads get variants in turn, and CoreNexa shows which gets more replies">
+            <Tooltip content="A/B test: leads get variants in turn, and BatSols shows which gets more replies">
               <Button
                 type="button"
                 size="xs"

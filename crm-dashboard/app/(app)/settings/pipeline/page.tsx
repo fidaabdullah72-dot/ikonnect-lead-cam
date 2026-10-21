@@ -64,7 +64,7 @@ export default function PipelineSettingsPage() {
 
   return (
     <Card>
-      <CardHeader title="Pipeline stages" description="Drag to reorder. The stage type tells CoreNexa where to move leads automatically (contacted after the first message, replied when they answer) and what counts as won." action={can.admin && <Button size="sm" variant="secondary" onClick={add}><Plus /> Add stage</Button>} />
+      <CardHeader title="Pipeline stages" description="Drag to reorder. The stage type tells BatSols where to move leads automatically (contacted after the first message, replied when they answer) and what counts as won." action={can.admin && <Button size="sm" variant="secondary" onClick={add}><Plus /> Add stage</Button>} />
       {!can.admin && <Callout tone="info" className="mx-5 mb-4">Only admins can edit stages.</Callout>}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={items.map((s) => s.id)} strategy={verticalListSortingStrategy}>
