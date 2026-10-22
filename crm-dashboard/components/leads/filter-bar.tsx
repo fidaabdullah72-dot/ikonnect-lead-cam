@@ -1,10 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { Bookmark, Building2, Filter, Flame, Flag, Globe, ListChecks, MapPin, Megaphone, Search, SlidersHorizontal, Tag as TagIcon, Target, Trash2, UserPlus, UserRound, X } from 'lucide-react';
+import { Bookmark, Building2, Filter, Flame, Flag, Globe, ListChecks, MapPin, Megaphone, Phone, Search, SlidersHorizontal, Tag as TagIcon, Target, Trash2, UserPlus, UserRound, X } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { LEAD_SOURCES, SOURCE_LABELS, countryName, type LeadFilters, type SavedView } from '@batsols/shared';
+import { LEAD_SOURCES, SOURCE_LABELS, countryName, phoneCallingCodes, type LeadFilters, type SavedView } from '@batsols/shared';
 import { WhatsAppIcon } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Field, Input, NativeSelect } from '@/components/ui/input';
@@ -106,6 +106,14 @@ export function FilterBar({
         value={filters.countries ?? []}
         onChange={(v) => set({ countries: v })}
         emptyText="No countries yet"
+      />
+      <MultiSelect
+        label="Phone code"
+        icon={<Phone />}
+        options={phoneCallingCodes().map((c) => ({ value: c.code, label: c.label }))}
+        value={filters.phone_codes ?? []}
+        onChange={(v) => set({ phone_codes: v })}
+        placeholder="Search +92, Pakistan…"
       />
       <MultiSelect
         label="Website"

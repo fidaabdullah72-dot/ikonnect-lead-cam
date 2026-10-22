@@ -70,6 +70,26 @@ describe('shared lead bank', () => {
 });
 
 describe('lead filters', () => {
+  it('finds numbers by country code, international or local format', async () => {
+    expect(await names(owner, { q: '+92' })).toEqual(['Burger Lab', 'Pizza Hut Gulberg', 'Smile Dental']);
+    expect(await names(owner, { q: '+1' })).toEqual(['Austin Dentist']);
+    expect(await names(owner, { q: '0300 1000002' })).toEqual(['Pizza Hut Gulberg']);
+    expect(await names(owner, { q: '512 555' })).toEqual(['Austin Dentist']);
+  });
+
+  it('filters by phone country code', async () => {
+    expect(await names(owner, { phone_codes: ['1'] })).toEqual(['Austin Dentist']);
+    expect(await names(owner, { phone_codes: ['92', '1'] })).toHaveLength(4);
+    expect(await names(owner, { phone_codes: ['44'] })).toEqual([]);
+  });
+
+  it('filters by category and city together, for members too', async () => {
+    await db.query(`update public.leads set category = 'Dentist', city = 'Lahore' where workspace_id = $1 and business_name in ('Smile Dental', 'Austin Dentist')`, [ws]);
+    await db.query(`update public.leads set city = 'Austin' where workspace_id = $1 and business_name = 'Austin Dentist'`, [ws]);
+    expect(await names(ali, { categories: ['Dentist'] })).toEqual(['Austin Dentist', 'Smile Dental']);
+    expect(await names(ali, { categories: ['Dentist'], cities: ['Lahore'] })).toEqual(['Smile Dental']);
+  });
+
   it('extracts the website domain and grades the website', async () => {
     const r = await rows<{ business_name: string; website_domain: string | null; kind: string }>(
       db,

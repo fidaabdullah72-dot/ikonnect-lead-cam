@@ -41,3 +41,13 @@ describe('formatting', () => {
     expect(jidToDigits('abc@lid')).toBeNull();
   });
 });
+
+describe('phoneCallingCodes', () => {
+  it('lists calling codes with common ones first and main countries named', async () => {
+    const { phoneCallingCodes } = await import('../src/phone');
+    const codes = phoneCallingCodes();
+    expect(codes[0]).toEqual({ code: '92', label: '+92 Pakistan' });
+    expect(codes.find((c) => c.code === '1')?.label).toMatch(/^\+1 United States, Canada/);
+    expect(new Set(codes.map((c) => c.code)).size).toBe(codes.length);
+  });
+});

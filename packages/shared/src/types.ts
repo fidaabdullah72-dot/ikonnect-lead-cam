@@ -594,6 +594,8 @@ export type LeadFilters = {
   /** ISO codes. */
   countries?: string[];
   categories?: string[];
+  /** Phone country calling codes, digits only: ["92", "971"]. */
+  phone_codes?: string[];
   tags?: string[];
   owner_ids?: UUID[];
   unassigned?: boolean;

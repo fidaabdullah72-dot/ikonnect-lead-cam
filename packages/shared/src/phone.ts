@@ -1,4 +1,4 @@
-import { parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js/max';
+import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type CountryCode } from 'libphonenumber-js/max';
 
 export type PhoneType = 'mobile' | 'landline' | 'unknown';
 
@@ -82,4 +82,30 @@ export function jidToDigits(jid: string | null | undefined): string | null {
   if (!jid) return null;
   const user = jid.split('@')[0]?.split(':')[0] ?? '';
   return /^\d{7,15}$/.test(user) ? user : null;
+}
+
+let callingCodes: Array<{ code: string; label: string }> | null = null;
+
+/** Country calling codes for pickers: `{ code: '92', label: '+92 Pakistan' }`, most common first, then by code. */
+export function phoneCallingCodes(): Array<{ code: string; label: string }> {
+  if (callingCodes) return callingCodes;
+  const names = new Intl.DisplayNames(['en'], { type: 'region' });
+  // Codes shared by several countries are named after the main ones first ("+1 United States, Canada").
+  const main: Record<string, string[]> = { '1': ['US', 'CA'], '7': ['RU', 'KZ'], '44': ['GB'], '47': ['NO'], '61': ['AU'], '39': ['IT'], '212': ['MA'], '358': ['FI'], '590': ['GP'], '599': ['CW'], '262': ['RE'], '290': ['SH'] };
+  const byCode = new Map<string, string[]>();
+  for (const c of getCountries()) {
+    const code = getCountryCallingCode(c);
+    byCode.set(code, [...(byCode.get(code) ?? []), c as string]);
+  }
+  for (const [code, regions] of byCode) {
+    const lead = main[code] ?? [];
+    byCode.set(code, [...lead.filter((r) => regions.includes(r as CountryCode)), ...regions.filter((r) => !lead.includes(r))].map((r) => names.of(r) ?? r));
+  }
+  const first = ['92', '971', '966', '44', '1', '91', '880', '974', '965', '968', '973', '61', '49', '90'];
+  const label = (code: string) => {
+    const n = byCode.get(code)!;
+    return `+${code} ${n.length > 2 ? `${n.slice(0, 2).join(', ')} +${n.length - 2}` : n.join(', ')}`;
+  };
+  const rest = [...byCode.keys()].filter((c) => !first.includes(c)).sort((a, b) => Number(a) - Number(b));
+  return (callingCodes = [...first.filter((c) => byCode.has(c)), ...rest].map((code) => ({ code, label: label(code) })));
 }
