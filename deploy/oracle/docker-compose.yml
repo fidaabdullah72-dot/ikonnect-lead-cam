@@ -60,6 +60,12 @@ services:
     init: true
     # Searches are background work: when the CPU is busy, the dashboard goes first (default share is 1024).
     cpu_shares: 256
+    # On a small server Chromium alone can fill the RAM and push the dashboard into swap
+    # (pages then take 10–20 s). Cap it: past this, Chromium's own memory is swapped instead,
+    # and at most one CPU goes to searches.
+    cpus: 1.0
+    mem_limit: 560m
+    memswap_limit: 2g
     shm_size: 512mb
     restart: unless-stopped
     logging: *logging

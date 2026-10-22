@@ -85,16 +85,16 @@ export function TasksView() {
       <PageHeader icon={<CheckSquare />} title="Tasks" description="Calls, meetings and follow-ups for you and your team." />
       {can.write && (
         <Card className="mb-5 flex flex-wrap items-center gap-2 p-3">
-          <NativeSelect inputSize="sm" className="w-32" value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as TaskType })}>
+          <NativeSelect inputSize="sm" className="w-full sm:w-32" value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as TaskType })}>
             {Object.entries(TYPE).map(([k, v]) => (
               <option key={k} value={k}>
                 {v.label}
               </option>
             ))}
           </NativeSelect>
-          <Input inputSize="sm" className="min-w-[200px] flex-1" placeholder="What needs doing? e.g. Call Smile Dental about pricing" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
-          <Input inputSize="sm" type="datetime-local" className="w-52" value={draft.due} onChange={(e) => setDraft({ ...draft, due: e.target.value })} />
-          <NativeSelect inputSize="sm" className="w-40" value={draft.assignee} onChange={(e) => setDraft({ ...draft, assignee: e.target.value })}>
+          <Input inputSize="sm" className="w-full sm:w-auto sm:min-w-[200px] sm:flex-1" placeholder="What needs doing? e.g. Call Smile Dental about pricing" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && add()} />
+          <Input inputSize="sm" type="datetime-local" className="w-full sm:w-52" value={draft.due} onChange={(e) => setDraft({ ...draft, due: e.target.value })} />
+          <NativeSelect inputSize="sm" className="min-w-0 flex-1 sm:w-40 sm:flex-none" value={draft.assignee} onChange={(e) => setDraft({ ...draft, assignee: e.target.value })}>
             {members.map((m) => (
               <option key={m.user_id} value={m.user_id}>
                 {m.user_id === userId ? 'Me' : m.profile.full_name || m.profile.email}
@@ -106,7 +106,7 @@ export function TasksView() {
           </Button>
         </Card>
       )}
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <Segmented value={scope} onChange={setScope} options={[{ value: 'mine', label: 'Assigned to me' }, { value: 'all', label: 'Everyone', icon: <Users2 /> }]} />
         <Segmented value={showDone ? 'all' : 'open'} onChange={(v) => setShowDone(v === 'all')} options={[{ value: 'open', label: 'Open' }, { value: 'all', label: 'Include done' }]} />
       </div>

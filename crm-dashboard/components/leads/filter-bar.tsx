@@ -15,7 +15,7 @@ import { useLeadLists } from '@/lib/lists';
 import { useCampaigns } from '@/lib/campaigns';
 import { getSupabase } from '@/lib/supabase/client';
 import { useWorkspace } from '@/lib/workspace';
-import { errorMessage } from '@/lib/utils';
+import { cn, errorMessage } from '@/lib/utils';
 
 const WEBSITE_OPTIONS: Array<{ value: NonNullable<LeadFilters['website']>; label: string }> = [
   { value: 'site', label: 'Has a real website' },
@@ -55,12 +55,15 @@ export function FilterBar({
   React.useEffect(() => setQ(filters.q ?? ''), [filters.q]);
 
   const active = countActiveFilters(filters);
+  // Phones: the filter chips fold away behind a "Filters" button (desktop shows them all).
+  const [open, setOpen] = React.useState(false);
   const ownerValue = [...(filters.owner_ids ?? []), ...(filters.unassigned ? ['__none'] : [])];
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Input
-        className="w-full sm:w-72"
+      <div className="flex w-full items-center gap-2 sm:contents">
+        <Input
+          className="min-w-0 flex-1 sm:w-72 sm:flex-none"
         inputSize="sm"
         leading={<Search />}
         trailing={
@@ -74,6 +77,11 @@ export function FilterBar({
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
+        <Button size="sm" variant={active ? 'primary' : 'secondary'} className="shrink-0 sm:hidden" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <SlidersHorizontal /> Filters{active ? ` (${active})` : ''}
+        </Button>
+      </div>
+      <div className={cn(open ? 'flex w-full flex-wrap items-center gap-2' : 'hidden', 'sm:contents')}>
       {!hide.includes('stage_ids') && (
         <MultiSelect
           label="Stage"
@@ -180,6 +188,7 @@ export function FilterBar({
           <X /> Clear {active}
         </Button>
       )}
+      </div>
     </div>
   );
 }

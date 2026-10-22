@@ -64,11 +64,13 @@ export const PACE_PRESETS = [
   },
 ] as const;
 
+/** Matches no lead: a hand-picked audience with nothing picked must not mean “everyone”. */
+export const NO_LEAD = '00000000-0000-0000-0000-000000000000';
+
 /** Filters that decide who actually receives the campaign. */
 export function effectiveFilters(a: BuilderState['audience'], skipLandlines: boolean): LeadFilters {
   return {
-    ...a.filters,
-    ...(a.mode === 'selection' && a.ids ? { ids: a.ids } : {}),
+    ...(a.mode === 'selection' ? { ids: a.ids?.length ? a.ids : [NO_LEAD] } : a.filters),
     sendable: true,
     ...(a.skipActive ? { not_in_active_campaign: true } : {}),
     ...(a.skipContactedDays ? { not_contacted_days: a.skipContactedDays } : {}),

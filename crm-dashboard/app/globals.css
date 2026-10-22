@@ -226,6 +226,14 @@
     background: var(--primary-soft-border);
   }
 
+  /* Dropdown lists: some browsers (Chrome on Windows) draw them on white while the
+     text inherits the dark theme's light colour, which made the options unreadable. */
+  select option,
+  select optgroup {
+    background-color: var(--surface);
+    color: var(--foreground);
+  }
+
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;

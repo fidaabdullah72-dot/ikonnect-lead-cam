@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { COUNTRIES, DEFAULT_OPT_OUT_KEYWORDS, isValidTimezone, type WorkspaceSettings } from '@batsols/shared';
+import { COUNTRIES, DEFAULT_OPT_OUT_KEYWORDS, allCountries, isValidTimezone, type WorkspaceSettings } from '@batsols/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { SwitchRow } from '@/components/ui/controls';
@@ -15,7 +15,16 @@ import { getSupabase } from '@/lib/supabase/client';
 import { useWorkspace } from '@/lib/workspace';
 import { errorMessage } from '@/lib/utils';
 
-const CURRENCIES = ['USD', 'PKR', 'AED', 'SAR', 'GBP', 'EUR', 'INR', 'CAD', 'AUD', 'BDT', 'QAR', 'KWD'];
+const CURRENCIES = ['USD', 'PKR', 'AED', 'SAR', 'GBP', 'EUR', 'INR', 'CAD', 'AUD', 'BDT', 'QAR', 'KWD', 'OMR', 'BHD', 'TRY', 'EGP', 'NGN', 'ZAR', 'MYR', 'IDR'];
+
+/** "PKR — Pakistani Rupee" */
+function currencyLabel(code: string) {
+  try {
+    return `${code} — ${new Intl.DisplayNames(['en'], { type: 'currency' }).of(code) ?? code}`;
+  } catch {
+    return code;
+  }
+}
 
 const TIMEZONES = (() => {
   try {
@@ -92,7 +101,7 @@ export default function GeneralSettingsPage() {
           </Field>
           <Field label="Default country" hint="How local phone numbers (e.g. 0300…) are read.">
             <NativeSelect value={form.default_country} disabled={disabled} onChange={(e) => setForm({ ...form, default_country: e.target.value })}>
-              {COUNTRIES.map((c) => (
+              {allCountries().map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.name}
                 </option>
@@ -111,7 +120,9 @@ export default function GeneralSettingsPage() {
           <Field label="Currency" hint="For deal values.">
             <NativeSelect value={form.settings.currency} disabled={disabled} onChange={(e) => setS('currency', e.target.value)}>
               {CURRENCIES.map((c) => (
-                <option key={c}>{c}</option>
+                <option key={c} value={c}>
+                  {currencyLabel(c)}
+                </option>
               ))}
             </NativeSelect>
           </Field>

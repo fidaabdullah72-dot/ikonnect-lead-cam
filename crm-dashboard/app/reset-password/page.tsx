@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Field, Input } from '@/components/ui/input';
+import { Field, Input, PasswordInput } from '@/components/ui/input';
 import { Callout } from '@/components/ui/feedback';
 import { CenteredCard } from '@/components/centered-card';
 import { getSupabase } from '@/lib/supabase/client';
@@ -42,10 +42,10 @@ export default function ResetPasswordPage() {
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         {error && <Callout tone="danger">{error}</Callout>}
         <Field label="New password" htmlFor="pw" hint="At least 8 characters.">
-          <Input id="pw" type="password" minLength={8} required leading={<Lock />} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+          <PasswordInput id="pw" minLength={8} required leading={<Lock />} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
         </Field>
         <Field label="Confirm password" htmlFor="pw2">
-          <Input id="pw2" type="password" minLength={8} required leading={<Lock />} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+          <PasswordInput id="pw2" minLength={8} required leading={<Lock />} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
         </Field>
         <Button type="submit" variant="primary" className="w-full" size="lg" loading={loading}>
           Update password

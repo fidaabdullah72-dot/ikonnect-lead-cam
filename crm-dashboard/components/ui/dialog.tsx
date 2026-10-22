@@ -31,6 +31,8 @@ export function DialogContent({
       <D.Content
         className={cn(
           'fixed left-1/2 top-[8vh] z-50 flex max-h-[84vh] w-[calc(100vw-32px)] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-lg focus:outline-none data-[state=open]:animate-scale-in',
+          // Phones: a bottom sheet across the full width.
+          'max-sm:inset-x-0 max-sm:bottom-0 max-sm:top-auto max-sm:max-h-[92dvh] max-sm:w-full max-sm:max-w-none max-sm:translate-x-0 max-sm:rounded-b-none max-sm:border-x-0 max-sm:border-b-0 max-sm:data-[state=open]:animate-slide-up',
           widths[size],
           className,
         )}
@@ -38,7 +40,7 @@ export function DialogContent({
         {...props}
       >
         {(title || description) && (
-          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-6 py-4">
+          <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 pr-12 sm:px-6">
             <div>
               {title && <D.Title className="text-[15px] font-semibold tracking-[-0.01em]">{title}</D.Title>}
               {description && <D.Description className="mt-1 text-[13px] text-muted">{description}</D.Description>}
@@ -58,11 +60,11 @@ export function DialogContent({
 }
 
 export function DialogBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('min-h-0 flex-1 overflow-y-auto px-6 py-5', className)} {...props} />;
+  return <div className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5', className)} {...props} />;
 }
 
 export function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('flex shrink-0 items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-6 py-3', className)} {...props} />;
+  return <div className={cn('flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6', className)} {...props} />;
 }
 
 /** Right-hand slide-over panel. */

@@ -14,6 +14,7 @@ import makeWASocket, {
   Browsers,
   DisconnectReason,
   fetchLatestWaWebVersion,
+  generateMessageIDV2,
   isJidBroadcast,
   isJidNewsletter,
   isJidStatusBroadcast,
@@ -471,6 +472,16 @@ export class WaSession {
   }
 
   /** Send a message, optionally showing "typing…" first. Returns the WhatsApp message id. */
+  /** Ids of messages this engine sent recently, so WhatsApp's echo of them isn't saved a second time. */
+  private readonly ownSends = new Map<string, number>();
+
+  /** Whether WhatsApp's echo `id` is a message this engine sent (the send records it itself). */
+  isOwnSend(id: string): boolean {
+    const cutoff = Date.now() - 15 * 60_000;
+    for (const [k, at] of this.ownSends) if (at < cutoff) this.ownSends.delete(k);
+    return this.ownSends.has(id);
+  }
+
   async send(digits: string, content: { text: string; mediaUrl?: string | null; mediaType?: string | null; mediaName?: string | null; mimetype?: string | null }, opts: { typing?: boolean } = {}) {
     const s = this.requireSocket();
     const jid = toWhatsAppJid(digits);
@@ -498,9 +509,13 @@ export class WaSession {
     } else {
       payload = { text: content.text };
     }
-    const sent = await s.sendMessage(jid, payload);
-    const id = sent?.key?.id;
-    if (!id) throw new Error('WhatsApp did not return a message id');
+    // Pick the id up front: WhatsApp echoes the message back (fromMe) before the caller has saved
+    // it, and the echo must be recognised as this send rather than stored as a second message.
+    const messageId = generateMessageIDV2(s.user?.id);
+    this.ownSends.set(messageId, Date.now());
+    const sent = await s.sendMessage(jid, payload, { messageId });
+    const id = sent?.key?.id ?? messageId;
+    if (id !== messageId) this.ownSends.set(id, Date.now());
     return id;
   }
 }

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Lock, Mail, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Field, Input } from '@/components/ui/input';
+import { Field, Input, PasswordInput } from '@/components/ui/input';
 import { Callout } from '@/components/ui/feedback';
 import { getSupabase } from '@/lib/supabase/client';
 import { createAccount } from '@/lib/auth-client';
@@ -85,7 +85,7 @@ export function InviteActions({ token, inviteEmail, signedInEmail }: { token: st
         <Input id="email" type="email" required readOnly={!!inviteEmail} leading={<Mail />} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
       </Field>
       <Field label="Choose a password" htmlFor="password" hint="At least 8 characters.">
-        <Input id="password" type="password" required minLength={8} leading={<Lock />} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />
+        <PasswordInput id="password" required minLength={8} leading={<Lock />} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />
       </Field>
       <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading}>
         Create account & join <ArrowRight />

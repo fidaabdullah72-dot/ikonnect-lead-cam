@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { asService, asUser, createDb, createUser, one, rows, type Db } from './harness';
 
@@ -151,8 +153,80 @@ describe('inbox folders', () => {
     expect(await asUser(db, outsider, (tx) => rows(tx, `select * from public.inbox_folders($1) where conversations > 0`, [ws]))).toEqual([]);
   });
 
-  it('members filter the inbox by folder', async () => {
+  it('members filter their own inbox by folder', async () => {
     const mine = await asUser(db, ali, (tx) => rows<{ id: string }>(tx, `select id from public.conversations where workspace_id = $1 and member_ids @> array[$2::uuid]`, [ws, bina]));
-    expect(mine.map((r) => r.id).sort()).toEqual([c2, c3].sort());
+    expect(mine.map((r) => r.id)).toEqual([c3]);
+  });
+});
+
+describe('private chats', () => {
+  const chats = async (user: string) =>
+    (await asUser(db, user, (tx) => rows<{ lead_id: string }>(tx, `select lead_id from public.conversations where workspace_id = $1`, [ws]))).map((r) => r.lead_id).sort();
+  const messageCount = async (user: string, lead: string) =>
+    (await asUser(db, user, (tx) => rows(tx, `select id from public.messages where lead_id = $1`, [lead]))).length;
+
+  it('admins see every chat', async () => {
+    expect(await chats(admin)).toEqual([leads['Smile Dental']!, leads['Pizza Point']!, leads['Gym One']!].sort());
+  });
+
+  it("members see only their own chats — not admins' or other members'", async () => {
+    // Ali: his number's chats (Smile Dental, Gym One); not Pizza Point on Bina's number.
+    expect(await chats(ali)).toEqual([leads['Smile Dental']!, leads['Gym One']!].sort());
+    expect(await messageCount(ali, leads['Pizza Point']!)).toBe(0);
+    expect(await messageCount(ali, leads['Smile Dental']!)).toBe(2);
+    // Bina: her number's chat, plus Gym One where she sent a message.
+    expect(await chats(bina)).toEqual([leads['Pizza Point']!, leads['Gym One']!].sort());
+  });
+
+  it('a chat with an admin-only number stays hidden from members', async () => {
+    const adminPhone = (await asService(db, (tx) => one<{ id: string }>(tx, `insert into public.whatsapp_accounts (workspace_id, owner_id, label) values ($1, $2, 'Admin phone') returning id`, [ws, admin]))).id;
+    const c = await conversation(adminPhone, leads['Smile Dental']!);
+    await sent(c, leads['Smile Dental']!, adminPhone, { sent_by: admin });
+    for (const user of [ali, bina]) {
+      const seen = await asUser(db, user, (tx) => rows(tx, `select id from public.conversations where id = $1`, [c]));
+      expect(seen).toHaveLength(0);
+    }
+    expect(await asUser(db, admin, (tx) => rows(tx, `select id from public.conversations where id = $1`, [c]))).toHaveLength(1);
+  });
+
+  it('viewers see no chats; members cannot change chats they cannot see', async () => {
+    expect(await chats(viewer)).toEqual([]);
+    const pizza = await one<{ id: string }>(db, `select id from public.conversations where lead_id = $1`, [leads['Pizza Point']!]);
+    const r = await asUser(db, ali, (tx) => tx.query(`update public.conversations set archived = true where id = $1`, [pizza.id]));
+    expect(r.affectedRows).toBe(0);
+  });
+
+  it('a message typed in the dashboard is visible to its sender before it is sent', async () => {
+    const m = await asUser(db, ali, (tx) =>
+      one<{ id: string }>(tx, `insert into public.messages (workspace_id, lead_id, account_id, direction, body, status, sent_by) values ($1, $2, $3, 'out', 'Hi', 'queued', $4) returning id`, [
+        ws,
+        leads['Pizza Point']!,
+        aliPhone,
+        ali,
+      ]),
+    );
+    expect(await asUser(db, ali, (tx) => rows(tx, `select id from public.messages where id = $1`, [m.id]))).toHaveLength(1);
+    expect(await asUser(db, bina, (tx) => rows(tx, `select id from public.messages where id = $1`, [m.id]))).toHaveLength(0);
+  });
+});
+
+describe('duplicate sent messages', () => {
+  it("WhatsApp's echo of a dashboard message is removed; a real phone message is kept", async () => {
+    const lead = leads['Gym One']!;
+    const conv = (await one<{ id: string }>(db, `select id from public.conversations where lead_id = $1 and account_id = $2`, [lead, aliPhone])).id;
+    const ins = (body: string, sentBy: string | null, at: string) =>
+      asService(db, (tx) =>
+        one<{ id: string }>(
+          tx,
+          `insert into public.messages (workspace_id, conversation_id, lead_id, account_id, direction, body, status, sent_by, created_at) values ($1, $2, $3, $4, 'out', $5, 'sent', $6, $7) returning id`,
+          [ws, conv, lead, aliPhone, body, sentBy, at],
+        ),
+      );
+    const original = await ins('Price list attached', ali, '2026-10-20T10:00:00Z');
+    const echo = await ins('Price list attached', null, '2026-10-20T10:00:02Z');
+    const phone = await ins('Price list attached', null, '2026-10-20T15:00:00Z'); // hours later: typed on the phone
+    await db.exec(readFileSync(join(import.meta.dirname, '..', 'migrations', '20261022000002_remove_echo_duplicates.sql'), 'utf8'));
+    const left = (await rows<{ id: string }>(db, `select id from public.messages where id = any($1)`, [[original.id, echo.id, phone.id]])).map((r) => r.id);
+    expect(left.sort()).toEqual([original.id, phone.id].sort());
   });
 });

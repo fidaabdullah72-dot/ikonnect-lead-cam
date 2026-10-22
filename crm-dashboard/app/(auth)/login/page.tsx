@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Field, Input } from '@/components/ui/input';
+import { Field, Input, PasswordInput } from '@/components/ui/input';
 import { Callout } from '@/components/ui/feedback';
 import { getSupabase } from '@/lib/supabase/client';
 
@@ -55,7 +55,7 @@ function LoginForm() {
           }
           htmlFor="password"
         >
-          <Input id="password" type="password" autoComplete="current-password" required inputSize="lg" leading={<Lock />} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+          <PasswordInput id="password" autoComplete="current-password" required inputSize="lg" leading={<Lock />} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
         </Field>
         <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading}>
           Sign in <ArrowRight />

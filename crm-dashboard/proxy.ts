@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
-import { SUPABASE_ANON_KEY, SUPABASE_URL, isSupabaseConfigured } from '@/lib/env';
+import { SUPABASE_ANON_KEY, SUPABASE_URL, USER_HEADER, isSupabaseConfigured } from '@/lib/env';
 
 /** Pages for signed-out users only. */
 const AUTH_PAGES = ['/login', '/signup', '/forgot-password'];
@@ -32,7 +32,8 @@ export async function proxy(request: NextRequest) {
   });
 
   const { data } = await supabase.auth.getClaims();
-  const signedIn = Boolean(data?.claims?.sub);
+  const claims = data?.claims;
+  const signedIn = Boolean(claims?.sub);
 
   const redirect = (to: URL) => {
     const r = NextResponse.redirect(to);
@@ -52,7 +53,15 @@ export async function proxy(request: NextRequest) {
   if (signedIn && AUTH_PAGES.some((p) => path === p)) {
     return redirect(new URL('/dashboard', request.url));
   }
-  return response;
+  if (!signedIn) return response;
+
+  // Hand the user verified above to the app layout, so it doesn't ask Supabase again
+  // (always overwritten here, so a browser can't supply its own).
+  const headers = new Headers(request.headers);
+  headers.set(USER_HEADER, encodeURIComponent(JSON.stringify({ id: claims!.sub, email: (claims!.email as string | undefined) ?? '' })));
+  const next = NextResponse.next({ request: { headers } });
+  for (const c of response.cookies.getAll()) next.cookies.set(c);
+  return next;
 }
 
 export const config = {

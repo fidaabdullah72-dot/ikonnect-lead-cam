@@ -121,7 +121,7 @@ export function InboxView() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const { workspace, userId } = useWorkspace();
+  const { workspace, userId, can } = useWorkspace();
   const { accounts, byId: accountById } = useAccounts();
   const { byId: memberById } = useMembers();
   const { membersOf } = useTeams();
@@ -190,18 +190,20 @@ export function InboxView() {
   }, [current, qc, workspace.id]);
 
   const firstName = (id: string | null) => (!id ? null : id === userId ? 'You' : (memberById.get(id)?.profile.full_name || memberById.get(id)?.profile.email || 'Former teammate').split(' ')[0]!);
-  const people = folders.filter((f) => f.kind === 'member');
-  const teamFolders = folders.filter((f) => f.kind === 'team');
+  // Members only have their own chats; teammate and team folders are for admins.
+  const people = can.admin ? folders.filter((f) => f.kind === 'member') : [];
+  const teamFolders = can.admin ? folders.filter((f) => f.kind === 'team') : [];
+  const title = folder.kind === 'all' && !can.admin ? 'My chats' : folder.title;
 
   return (
     <div className="flex h-full min-h-0">
       {/* Folders */}
-      <nav className="hidden w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-surface-2/30 p-2 xl:flex" aria-label="Inbox folders">
+      <nav className={cn('hidden w-52 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-surface-2/30 p-2', can.admin && 'xl:flex')} aria-label="Inbox folders">
         <h1 className="flex items-center gap-2 px-2.5 pb-2 pt-1.5 text-[17px] font-semibold tracking-[-0.01em]">
           <Inbox className="size-4.5 text-primary" /> Inbox
         </h1>
         <FolderButton folder={folders[0]!} active={folder.key === 'all'} onSelect={() => openFolder('all')} />
-        <div className="px-2.5 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider text-subtle">Teammates</div>
+        {people.length > 0 && <div className="px-2.5 pb-1 pt-4 text-[11px] font-medium uppercase tracking-wider text-subtle">Teammates</div>}
         {people.map((f) => (
           <FolderButton key={f.key} folder={f} active={folder.key === f.key} onSelect={() => openFolder(f.key)} />
         ))}
@@ -220,7 +222,7 @@ export function InboxView() {
           <div className="flex items-center justify-between gap-2">
             <h2 className="flex min-w-0 items-center gap-2 text-[17px] font-semibold tracking-[-0.01em]">
               {folder.kind === 'all' ? <Inbox className="size-4.5 shrink-0 text-primary" /> : <Users className="size-4.5 shrink-0 text-primary" />}
-              <span className="truncate">{folder.title}</span>
+              <span className="truncate">{title}</span>
             </h2>
             {mounted && accounts.length > 1 && (
               <NativeSelect inputSize="sm" className="w-36 shrink-0" value={account} onChange={(e) => setAccount(e.target.value)}>
@@ -234,6 +236,7 @@ export function InboxView() {
             )}
           </div>
           {/* Folders on small screens */}
+          {can.admin && (
           <NativeSelect inputSize="sm" className="xl:hidden" value={folder.key} onChange={(e) => openFolder(e.target.value as FolderKey)} aria-label="Folder">
             <option value="all">All chats{folders[0]!.unread ? ` (${folders[0]!.unread} unread)` : ''}</option>
             <optgroup label="Teammates">
@@ -255,6 +258,7 @@ export function InboxView() {
               </optgroup>
             )}
           </NativeSelect>
+          )}
           <Input inputSize="sm" leading={<Search />} placeholder="Search chats…" value={q} onChange={(e) => setQ(e.target.value)} />
           <Segmented<Filter>
             size="sm"
@@ -377,7 +381,12 @@ function ChatPane({ conv, onBack, onOpenLead }: { conv: ConvRow; onBack: () => v
     },
     refetchInterval: 4000,
   });
-  const thread = React.useMemo(() => [...(messages.data ?? []), ...(queued.data ?? [])], [messages.data, queued.data]);
+  // A message moves from "queued" to the chat once sent; while both lists refresh it can be in both.
+  const thread = React.useMemo(() => {
+    const sent = messages.data ?? [];
+    const ids = new Set(sent.map((m) => m.id));
+    return [...sent, ...(queued.data ?? []).filter((m) => !ids.has(m.id))];
+  }, [messages.data, queued.data]);
   const senderOf = useSenderOf(thread);
   const account = accountById.get(conv.account_id);
   const { accounts: usable } = useUsableAccounts();

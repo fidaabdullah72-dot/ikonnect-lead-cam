@@ -273,7 +273,7 @@ function NewSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
   }
 
   const allCats = Object.values(BUSINESS_CATEGORIES).flat();
-  const areas = deep && areaLimit ? pairs * areaLimit : null;
+  const areas = deep && areaLimit ? (keywords.length ? pairs : 0) * areaLimit : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -438,7 +438,9 @@ function NewSearchDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
         <DialogFooter>
           <span className="mr-auto text-[13px] text-muted">
             {deep
-              ? `${pairs} keyword × place${pairs === 1 ? '' : 's'} · ${areas ? `up to ${formatNumber(areas)} map areas` : 'every map area'}${areas && provider === 'browser' ? ` · ${roughly(areas * BROWSER_SECONDS_PER_AREA)}` : ''}`
+              ? !keywords.length
+                ? 'Add a keyword to start'
+                : `${pairs} keyword × place${pairs === 1 ? '' : 's'} · ${areas !== null ? `up to ${formatNumber(areas)} map areas` : 'every map area'}${areas && provider === 'browser' ? ` · ${roughly(areas * BROWSER_SECONDS_PER_AREA)}` : ''}`
               : `${queries.length} search${queries.length === 1 ? '' : 'es'} · up to ${formatNumber(queries.length * Math.min(max, cap))} businesses`}
           </span>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Callout } from '@/components/ui/feedback';
-import { Field, Input, NativeSelect } from '@/components/ui/input';
+import { Field, Input, NativeSelect, PasswordInput } from '@/components/ui/input';
 import { getSupabase } from '@/lib/supabase/client';
 import { useEngineStatus } from '@/lib/queries';
 import { useWorkspace } from '@/lib/workspace';
@@ -76,7 +76,7 @@ export default function IntegrationsPage() {
           <CardHeader icon={<MapPin />} title="Google Places API" description="Powers the recommended lead-finder source: reliable, fast and within Google’s terms." />
           <CardContent className="space-y-3">
             <Field label="API key" hint="Google Cloud Console → APIs & Services → enable “Places API (New)” → Credentials → Create API key.">
-              <Input type="password" leading={<KeyRound />} value={key} onChange={(e) => setKey(e.target.value)} placeholder="AIza…" />
+              <PasswordInput leading={<KeyRound />} value={key} onChange={(e) => setKey(e.target.value)} placeholder="AIza…" />
             </Field>
             <a className="inline-flex items-center gap-1 text-xs text-primary hover:underline" href="https://console.cloud.google.com/apis/library/places.googleapis.com" target="_blank" rel="noreferrer">
               Open Google Cloud <ExternalLink className="size-3" />

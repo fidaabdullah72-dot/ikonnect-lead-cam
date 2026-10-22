@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Layers, MousePointerClick, ShieldCheck, Users } from 'lucide-react';
 import type { Lead, LeadFilters } from '@batsols/shared';
 import { FilterBar } from '@/components/leads/filter-bar';
+import { LeadPicker } from '@/components/campaigns/lead-picker';
 import { Card } from '@/components/ui/card';
 import { SwitchRow } from '@/components/ui/controls';
 import { Callout } from '@/components/ui/feedback';
@@ -16,12 +17,12 @@ import { getSupabase } from '@/lib/supabase/client';
 import { cleanFilters } from '@/lib/leads';
 import { useWorkspace } from '@/lib/workspace';
 import { cn, formatNumber } from '@/lib/utils';
-import { effectiveFilters, type BuilderState } from './state';
+import { NO_LEAD, effectiveFilters, type BuilderState } from './state';
 
 export function useAudienceCount(audience: BuilderState['audience'], skipLandlines: boolean, excludeCampaignId?: string) {
   const { workspace } = useWorkspace();
   const filters = cleanFilters({ ...effectiveFilters(audience, skipLandlines), ...(excludeCampaignId ? { exclude_campaign_id: excludeCampaignId } : {}) });
-  const raw = cleanFilters(audience.mode === 'selection' && audience.ids ? { ids: audience.ids } : audience.filters);
+  const raw = cleanFilters(audience.mode === 'selection' ? { ids: audience.ids?.length ? audience.ids : [NO_LEAD] } : audience.filters);
   return useQuery({
     queryKey: ['audience-count', workspace.id, filters, raw],
     queryFn: async () => {
@@ -51,16 +52,14 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
           {
             mode: 'selection' as const,
             icon: MousePointerClick,
-            title: a.ids ? `${formatNumber(a.ids.length)} hand-picked leads` : 'Hand-picked leads',
-            text: a.ids ? 'Selected on the Leads page' : 'Select leads on the Leads page, then “Add to campaign”',
-            disabled: !a.ids,
+            title: a.ids?.length ? `${formatNumber(a.ids.length)} hand-picked leads` : 'Hand-picked leads',
+            text: 'Search and tick the exact leads to message',
           },
         ].map((o) => (
           <button
             key={o.mode}
             type="button"
-            disabled={o.disabled}
-            onClick={() => setA({ mode: o.mode })}
+            onClick={() => setA({ mode: o.mode, ...(o.mode === 'selection' && !a.ids ? { ids: [] } : {}) })}
             className={cn(
               'flex items-start gap-3 rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50',
               a.mode === o.mode ? 'border-primary bg-primary-soft ring-1 ring-primary/30' : 'border-border bg-surface hover:border-border-strong',
@@ -80,6 +79,7 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
           <FilterBar filters={a.filters} onChange={setF} />
         </Card>
       )}
+      {a.mode === 'selection' && <LeadPicker selected={a.ids ?? []} onChange={(ids) => setA({ ids })} base={{ sendable: true }} />}
 
       <Card className="divide-y divide-border px-4">
         <SwitchRow
@@ -133,7 +133,9 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
           </div>
         )}
       </div>
-      {count.data && count.data.eligible === 0 && <Callout tone="warning">No leads match yet. Loosen the filters, or add leads first.</Callout>}
+      {count.data && count.data.eligible === 0 && (
+        <Callout tone="warning">{a.mode === 'selection' ? 'Tick at least one lead above.' : 'No leads match yet. Loosen the filters, or add leads first.'}</Callout>
+      )}
       {(count.data?.eligible ?? 0) > 0 && <AudiencePreview audience={a} skipLandlines={state.settings.skip_landlines} excludeCampaignId={campaignId} total={count.data!.eligible} />}
     </div>
   );
@@ -148,7 +150,7 @@ function AudiencePreview({ audience, skipLandlines, excludeCampaignId, total }: 
     queryFn: async () => {
       const { data, error } = await getSupabase()
         .rpc('filtered_leads', { p_workspace: workspace.id, p_filters: filters })
-        .select('id, business_name, phone, city, country, category, website_domain')
+        .select('id, business_name, phone, city, country, category, website_domain, score')
         .order('score', { ascending: false })
         .limit(15);
       if (error) throw error;

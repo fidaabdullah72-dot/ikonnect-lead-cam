@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowRight, Building2, Lock, Mail, User } from 'lucide-react';
 import { COUNTRIES } from '@batsols/shared';
 import { Button } from '@/components/ui/button';
-import { Field, Input, NativeSelect } from '@/components/ui/input';
+import { Field, Input, NativeSelect, PasswordInput } from '@/components/ui/input';
 import { Callout } from '@/components/ui/feedback';
 import { getSupabase } from '@/lib/supabase/client';
 import { createAccount, guessTimezone } from '@/lib/auth-client';
@@ -66,7 +66,7 @@ export default function SignupPage() {
           <Input id="email" type="email" required autoComplete="email" leading={<Mail />} value={form.email} onChange={set('email')} placeholder="you@company.com" />
         </Field>
         <Field label="Password" htmlFor="password" hint="At least 8 characters.">
-          <Input id="password" type="password" required minLength={8} autoComplete="new-password" leading={<Lock />} value={form.password} onChange={set('password')} placeholder="••••••••" />
+          <PasswordInput id="password" required minLength={8} autoComplete="new-password" leading={<Lock />} value={form.password} onChange={set('password')} placeholder="••••••••" />
         </Field>
         <div className="grid grid-cols-[1fr_140px] gap-3">
           <Field label="Company / team" htmlFor="workspace">

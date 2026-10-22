@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { Label as LabelPrimitive } from 'radix-ui';
 import { cn } from '@/lib/utils';
 
@@ -25,6 +26,29 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(function Inp
       <input ref={ref} className={cn(fieldBase, h, leading ? 'pl-9' : 'pl-3', trailing ? 'pr-9' : 'pr-3')} {...props} />
       {trailing && <span className="absolute right-2 flex items-center text-subtle [&_svg]:size-4">{trailing}</span>}
     </div>
+  );
+});
+
+/** Password field with a show/hide button. */
+export const PasswordInput = React.forwardRef<HTMLInputElement, Omit<InputProps, 'type' | 'trailing'>>(function PasswordInput(props, ref) {
+  const [shown, setShown] = React.useState(false);
+  return (
+    <Input
+      ref={ref}
+      {...props}
+      type={shown ? 'text' : 'password'}
+      trailing={
+        <button
+          type="button"
+          onClick={() => setShown((v) => !v)}
+          aria-label={shown ? 'Hide password' : 'Show password'}
+          aria-pressed={shown}
+          className="rounded p-1 text-subtle hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          {shown ? <EyeOff /> : <Eye />}
+        </button>
+      }
+    />
   );
 });
 

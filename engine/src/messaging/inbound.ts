@@ -48,7 +48,9 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
   const key = msg.key;
   if (!key.id || !key.remoteJid || isJidGroup(key.remoteJid)) return;
   const fromMe = Boolean(key.fromMe);
-  // Our own sends are recorded when we send them; skip their echoes.
+  // Our own sends are recorded when we send them; skip their echoes. The echo can arrive before
+  // the send is saved, so the session's own list is checked first, then the database.
+  if (fromMe && session.isOwnSend(key.id)) return;
   if (fromMe) {
     const { data: known } = await db.from('messages').select('id').eq('account_id', session.accountId).eq('wa_message_id', key.id).maybeSingle();
     if (known) return;

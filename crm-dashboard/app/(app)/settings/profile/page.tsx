@@ -8,7 +8,7 @@ import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Segmented } from '@/components/ui/controls';
-import { Field, Input } from '@/components/ui/input';
+import { Field, Input, PasswordInput } from '@/components/ui/input';
 import { getSupabase } from '@/lib/supabase/client';
 import { useWorkspace } from '@/lib/workspace';
 import { errorMessage } from '@/lib/utils';
@@ -73,10 +73,10 @@ export default function ProfilePage() {
         <CardHeader icon={<KeyRound />} title="Change password" />
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <Field label="New password">
-            <Input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
+            <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} autoComplete="new-password" />
           </Field>
           <Field label="Confirm">
-            <Input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
+            <PasswordInput value={pw2} onChange={(e) => setPw2(e.target.value)} autoComplete="new-password" />
           </Field>
         </CardContent>
         <CardFooter>

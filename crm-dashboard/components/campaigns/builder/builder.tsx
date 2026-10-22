@@ -79,12 +79,12 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
         return;
       }
       setExisting(c);
-      const aud = c.audience as { filters?: BuilderState['audience']['filters']; options?: Partial<BuilderState['audience']> };
+      const aud = c.audience as { mode?: BuilderState['audience']['mode']; ids?: string[] | null; filters?: BuilderState['audience']['filters']; options?: Partial<BuilderState['audience']> };
       setState({
         ...initialState(workspace.timezone),
         name: c.name,
         description: c.description ?? '',
-        audience: { ...initialState(workspace.timezone).audience, ...(aud.options ?? {}), filters: aud.filters ?? {}, mode: 'filters', ids: null },
+        audience: { ...initialState(workspace.timezone).audience, ...(aud.options ?? {}), filters: aud.filters ?? {}, ...(aud.mode === 'selection' && aud.ids ? { mode: 'selection', ids: aud.ids } : { mode: 'filters', ids: null }) },
         steps: (steps as CampaignStep[]).length
           ? (steps as CampaignStep[]).map((st) => ({ key: newKey(), delay_hours: st.delay_hours, variants: st.variants.length ? st.variants : [{ body: '' }] }))
           : initialState(workspace.timezone).steps,
@@ -112,6 +112,7 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
       const audience = {
         mode: state.audience.mode,
         filters: cleanFilters(state.audience.filters),
+        ids: state.audience.mode === 'selection' ? (state.audience.ids ?? []) : null,
         options: { skipActive: state.audience.skipActive, skipContactedDays: state.audience.skipContactedDays, onlyVerified: state.audience.onlyVerified },
         lead_count: count.data?.eligible ?? 0,
       };

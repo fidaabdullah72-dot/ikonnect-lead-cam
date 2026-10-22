@@ -13,7 +13,7 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { Checkbox, SwitchRow } from '@/components/ui/controls';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Callout, useConfirm } from '@/components/ui/feedback';
-import { Field, Input, NativeSelect } from '@/components/ui/input';
+import { Field, Input, NativeSelect, PasswordInput } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/menu';
 import { Table, Td, Th, Tr } from '@/components/ui/layout';
 import { getSupabase } from '@/lib/supabase/client';
@@ -37,6 +37,20 @@ function useMemberRows() {
       return data as unknown as MemberRow[];
     },
   });
+}
+
+type MemberEdit = Partial<Pick<WorkspaceMember, 'role' | 'active' | 'title' | 'permissions'>> & { full_name?: string; team_ids?: string[]; password?: string };
+
+/** Edits/removals run on the server, which checks admin rights. Returns an error message, or null. */
+async function memberApi(method: 'PATCH' | 'DELETE', body: Record<string, unknown>): Promise<string | null> {
+  try {
+    const res = await fetch('/api/team/members', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (res.ok) return null;
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return data.error ?? `Something went wrong (${res.status})`;
+  } catch {
+    return 'Network error — check your connection and try again';
+  }
 }
 
 const PERMS: Array<{ key: keyof MemberPermissions; label: string; description: string; def: boolean }> = [
@@ -92,18 +106,22 @@ function TeamSettings() {
     qc.invalidateQueries({ queryKey: ['teams', workspace.id] });
   };
 
-  const update = async (m: MemberRow, patch: Partial<WorkspaceMember>, msg: string) => {
-    const { error } = await getSupabase().from('workspace_members').update(patch).eq('workspace_id', workspace.id).eq('user_id', m.user_id);
-    if (error) return toast.error(errorMessage(error));
+  const update = async (m: MemberRow, patch: MemberEdit, msg: string) => {
+    const error = await memberApi('PATCH', { workspace_id: workspace.id, user_id: m.user_id, ...patch });
+    if (error) {
+      toast.error(error);
+      return false;
+    }
     toast.success(msg);
     refresh();
+    return true;
   };
 
   async function remove(m: MemberRow) {
     const self = m.user_id === userId;
     if (!(await confirm({ title: self ? `Leave ${workspace.name}?` : `Remove ${m.profile.full_name || m.profile.email}?`, description: self ? 'You lose access until invited again.' : 'They lose access immediately. Their leads and history stay. Their personal WhatsApp numbers stop sending.', confirmLabel: self ? 'Leave' : 'Remove', danger: true }))) return;
-    const { error } = await getSupabase().from('workspace_members').delete().eq('workspace_id', workspace.id).eq('user_id', m.user_id);
-    if (error) return toast.error(errorMessage(error));
+    const error = await memberApi('DELETE', { workspace_id: workspace.id, user_id: m.user_id });
+    if (error) return toast.error(error);
     if (self) {
       router.replace('/dashboard');
       router.refresh();
@@ -134,14 +152,14 @@ function TeamSettings() {
           }
         />
         <div className="overflow-x-auto">
-          <Table className="min-w-[820px]">
+          <Table className="md:min-w-[820px]">
             <thead>
               <tr>
                 <Th>Member</Th>
                 <Th>Role</Th>
-                <Th>Teams</Th>
-                <Th>WhatsApp</Th>
-                <Th>Joined</Th>
+                <Th className="hidden md:table-cell">Teams</Th>
+                <Th className="hidden sm:table-cell">WhatsApp</Th>
+                <Th className="hidden lg:table-cell">Joined</Th>
                 <Th className="w-12" />
               </tr>
             </thead>
@@ -179,7 +197,7 @@ function TeamSettings() {
                         <Badge tone={m.role === 'owner' ? 'primary' : 'neutral'}>{ROLE_LABELS[m.role]}</Badge>
                       )}
                     </Td>
-                    <Td>
+                    <Td className="hidden md:table-cell">
                       <div className="flex flex-wrap gap-1">
                         {teamsOf(m.user_id).map((t) => (
                           <span key={t.id} className="inline-flex items-center gap-1 rounded bg-surface-2 px-1.5 py-0.5 text-[11.5px]">
@@ -188,13 +206,13 @@ function TeamSettings() {
                         ))}
                       </div>
                     </Td>
-                    <Td className="text-[13px] text-muted">
+                    <Td className="hidden text-[13px] text-muted sm:table-cell">
                       <span className="inline-flex items-center gap-1.5">
                         <Smartphone className="size-3.5" />
                         {nums.filter((a) => a.status === 'connected').length}/{nums.length}
                       </span>
                     </Td>
-                    <Td className="text-[13px] text-muted">{timeAgo(m.created_at)}</Td>
+                    <Td className="hidden text-[13px] text-muted lg:table-cell">{timeAgo(m.created_at)}</Td>
                     <Td>
                       {(editable || m.user_id === userId) && (
                         <DropdownMenu>
@@ -204,9 +222,9 @@ function TeamSettings() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent className="w-56">
-                            {editable && m.role === 'member' && (
+                            {editable && (
                               <DropdownMenuItem onSelect={() => setPerms(m)}>
-                                <ShieldCheck /> Permissions & limits
+                                <ShieldCheck /> Edit member & access
                               </DropdownMenuItem>
                             )}
                             {editable && m.user_id !== userId && m.role !== 'owner' && (
@@ -275,7 +293,15 @@ function TeamSettings() {
 
       <AddMemberDialog open={addOpen} onOpenChange={setAddOpen} onDone={refresh} teams={teams} />
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} onCreated={refresh} />
-      <PermissionsDialog member={perms} onClose={() => setPerms(null)} onSave={(p, title) => perms && update(perms, { permissions: p, title }, 'Permissions saved').then(() => setPerms(null))} />
+      <EditMemberDialog
+        member={perms}
+        self={perms?.user_id === userId}
+        roleOptions={roleOptions}
+        teams={teams}
+        teamIds={perms ? teamsOf(perms.user_id).map((t) => t.id) : []}
+        onClose={() => setPerms(null)}
+        onSave={(patch) => perms && update(perms, patch, 'Member updated').then((ok) => ok && setPerms(null))}
+      />
     </div>
   );
 }
@@ -377,42 +403,114 @@ function AddMemberDialog({ open, onOpenChange, onDone, teams }: { open: boolean;
   );
 }
 
-function PermissionsDialog({ member, onClose, onSave }: { member: MemberRow | null; onClose: () => void; onSave: (p: MemberPermissions, title: string | null) => void }) {
+function EditMemberDialog({
+  member,
+  self,
+  roleOptions,
+  teams,
+  teamIds,
+  onClose,
+  onSave,
+}: {
+  member: MemberRow | null;
+  self: boolean;
+  roleOptions: Role[];
+  teams: Array<{ id: string; name: string; color: string }>;
+  teamIds: string[];
+  onClose: () => void;
+  onSave: (patch: MemberEdit) => void;
+}) {
   const [p, setP] = React.useState<MemberPermissions>({});
-  const [title, setTitle] = React.useState('');
+  const [form, setForm] = React.useState({ full_name: '', title: '', role: 'member' as Role, team_ids: [] as string[], password: '' });
+  const [saving, setSaving] = React.useState(false);
   React.useEffect(() => {
     if (member) {
       setP(member.permissions ?? {});
-      setTitle(member.title ?? '');
+      setForm({ full_name: member.profile.full_name ?? '', title: member.title ?? '', role: member.role, team_ids: teamIds, password: '' });
     }
+    // Only when a different member is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [member]);
+  const pwBad = !!form.password && form.password.length < 8;
+
+  async function save() {
+    if (!member) return;
+    setSaving(true);
+    await onSave({
+      full_name: form.full_name.trim() && form.full_name.trim() !== member.profile.full_name ? form.full_name.trim() : undefined,
+      title: form.title.trim() || null,
+      ...(self || form.role === member.role ? {} : { role: form.role }),
+      team_ids: form.team_ids,
+      ...(form.role === 'member' ? { permissions: p } : {}),
+      ...(form.password ? { password: form.password } : {}),
+    });
+    setSaving(false);
+  }
+
   return (
     <Dialog open={!!member} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent size="md" title="Permissions & limits" description={member?.profile.full_name}>
+      <DialogContent size="md" title="Edit member" description={member?.profile.email}>
         <DialogBody className="space-y-4">
-          <Field label="Job title" optional>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-          </Field>
-          <div className="divide-y divide-border rounded-xl border border-border px-4">
-            {PERMS.map((x) => (
-              <SwitchRow key={x.key} label={x.label} description={x.description} checked={(p[x.key] as boolean | undefined) ?? x.def} onCheckedChange={(v) => setP({ ...p, [x.key]: v })} />
-            ))}
-          </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Max WhatsApp numbers">
-              <Input type="number" min={0} max={20} value={p.max_numbers ?? 3} onChange={(e) => setP({ ...p, max_numbers: Number(e.target.value) })} />
+            <Field label="Full name">
+              <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
             </Field>
-            <Field label="Daily message cap" hint="Across all their numbers. Empty = no cap.">
-              <Input type="number" min={1} value={p.daily_message_cap ?? ''} onChange={(e) => setP({ ...p, daily_message_cap: e.target.value ? Number(e.target.value) : null })} />
+            <Field label="Job title" optional>
+              <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Sales executive" />
+            </Field>
+            <Field label="Role" hint={self ? 'You can’t change your own role.' : ROLE_DESCRIPTIONS[form.role]}>
+              <NativeSelect value={form.role} disabled={self} onChange={(e) => setForm({ ...form, role: e.target.value as Role })}>
+                {[...new Set([...roleOptions, form.role])].map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABELS[r]}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field label="New password" optional hint={pwBad ? 'At least 8 characters' : 'Leave empty to keep their password.'} error={pwBad ? 'Too short' : null}>
+              <PasswordInput value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} autoComplete="new-password" />
             </Field>
           </div>
+          {teams.length > 0 && (
+            <Field label="Teams">
+              <div className="flex flex-wrap gap-2">
+                {teams.map((t) => {
+                  const on = form.team_ids.includes(t.id);
+                  return (
+                    <label key={t.id} className={cn('flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[13px]', on ? 'border-primary bg-primary-soft' : 'border-border')}>
+                      <Checkbox checked={on} onCheckedChange={(v) => setForm({ ...form, team_ids: v === true ? [...form.team_ids, t.id] : form.team_ids.filter((x) => x !== t.id) })} />
+                      <span className="size-2 rounded-full" style={{ background: t.color }} />
+                      {t.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+          {form.role === 'member' && (
+            <>
+              <div className="divide-y divide-border rounded-xl border border-border px-4">
+                {PERMS.map((x) => (
+                  <SwitchRow key={x.key} label={x.label} description={x.description} checked={(p[x.key] as boolean | undefined) ?? x.def} onCheckedChange={(v) => setP({ ...p, [x.key]: v })} />
+                ))}
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Max WhatsApp numbers">
+                  <Input type="number" min={0} max={20} value={p.max_numbers ?? 3} onChange={(e) => setP({ ...p, max_numbers: Number(e.target.value) })} />
+                </Field>
+                <Field label="Daily message cap" hint="Across all their numbers. Empty = no cap.">
+                  <Input type="number" min={1} value={p.daily_message_cap ?? ''} onChange={(e) => setP({ ...p, daily_message_cap: e.target.value ? Number(e.target.value) : null })} />
+                </Field>
+              </div>
+            </>
+          )}
         </DialogBody>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => onSave(p, title.trim() || null)}>
-            Save
+          <Button variant="primary" onClick={save} loading={saving} disabled={!form.full_name.trim() || pwBad}>
+            Save changes
           </Button>
         </DialogFooter>
       </DialogContent>

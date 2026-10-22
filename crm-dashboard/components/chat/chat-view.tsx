@@ -106,7 +106,14 @@ export function ChatView() {
         </div>
       </aside>
       {selected ? (
-        <ChannelPane key={selected.id} channel={selected} title={selected.kind === 'dm' ? dmName(selected) : selected.name ?? ''} onBack={() => router.replace(pathname)} />
+        <ChannelPane
+          key={selected.id}
+          channel={selected}
+          title={selected.kind === 'dm' ? dmName(selected) : selected.name ?? ''}
+          onBack={() => router.replace(pathname)}
+          // Phones show the list until a channel is tapped (desktop opens #general beside it).
+          className={params.get('c') ? undefined : 'hidden md:flex'}
+        />
       ) : (
         <div className="hidden flex-1 items-center justify-center md:flex">
           <EmptyState icon={<Users />} title="Talk with your team" description="Channels for groups, direct messages for one-to-one. Share leads and @mention teammates." />
@@ -139,7 +146,7 @@ function SidebarRow({ active, onClick, icon, label, unread, mentions, dim }: { a
   );
 }
 
-function ChannelPane({ channel, title, onBack }: { channel: ChannelRow; title: string; onBack: () => void }) {
+function ChannelPane({ channel, title, onBack, className }: { channel: ChannelRow; title: string; onBack: () => void; className?: string }) {
   const { workspace, userId, can } = useWorkspace();
   const { byId, members } = useMembers();
   const qc = useQueryClient();
@@ -226,7 +233,7 @@ function ChannelPane({ channel, title, onBack }: { channel: ChannelRow; title: s
   }
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col">
+    <section className={cn('flex min-w-0 flex-1 flex-col', className)}>
       <header className="flex items-center gap-3 border-b border-border px-4 py-2.5">
         <Button variant="ghost" size="icon-sm" className="md:hidden" onClick={onBack} aria-label="Back">
           ‹
