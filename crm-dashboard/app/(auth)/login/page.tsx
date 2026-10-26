@@ -38,7 +38,7 @@ function LoginForm() {
   return (
     <>
       <h2 className="text-2xl font-semibold tracking-[-0.025em]">Welcome back</h2>
-      <p className="mt-1.5 text-[13.5px] text-muted">Sign in to your BatSols workspace.</p>
+      <p className="mt-1.5 text-[13.5px] text-muted">Sign in to your BatWos workspace.</p>
       <form onSubmit={onSubmit} className="mt-8 space-y-4">
         {error && <Callout tone="danger">{error}</Callout>}
         <Field label="Email" htmlFor="email">
@@ -62,7 +62,7 @@ function LoginForm() {
         </Button>
       </form>
       <p className="mt-8 text-center text-[13px] text-muted">
-        New to BatSols?{' '}
+        New to BatWos?{' '}
         <Link href="/signup" className="font-medium text-foreground hover:text-primary">
           Create a workspace
         </Link>

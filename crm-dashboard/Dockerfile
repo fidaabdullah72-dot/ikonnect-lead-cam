@@ -1,4 +1,4 @@
-# BatSols web app (dashboard + API routes). Build from the repo root:
+# BatWos web app (dashboard + API routes). Build from the repo root:
 #   docker build -f crm-dashboard/Dockerfile --build-arg NEXT_PUBLIC_SUPABASE_URL=… .
 # NEXT_PUBLIC_* values are baked into the browser bundle at build time.
 FROM node:22-bookworm-slim

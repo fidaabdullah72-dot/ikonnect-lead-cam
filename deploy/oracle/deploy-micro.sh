@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy or update BatSols on two small servers (Oracle Always Free AMD micros, 1 GB each):
+# Deploy or update BatWos on two small servers (Oracle Always Free AMD micros, 1 GB each):
 #   deploy/oracle/deploy-micro.sh <web-server-ip> <engine-server-ip> [ssh-key-file]
 # The micros are too small to build the images, so this computer builds them and
 # uploads them. Server 1 runs the dashboard, HTTPS and the Google Maps search

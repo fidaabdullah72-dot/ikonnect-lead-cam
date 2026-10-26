@@ -20,6 +20,40 @@ const IGNORED = new Set([
   'encReactionMessage',
   'messageContextInfo',
   'editedMessage',
+  // System and status notices: nothing the lead typed, so never a reply.
+  'fastRatchetKeySenderKeyDistributionMessage',
+  'deviceSentMessage',
+  'call',
+  'callLogMesssage',
+  'bcallMessage',
+  'scheduledCallCreationMessage',
+  'scheduledCallEditMessage',
+  'placeholderMessage',
+  'messageHistoryBundle',
+  'messageHistoryNotice',
+  'stickerSyncRmrMessage',
+  'requestPhoneNumberMessage',
+  'encEventResponseMessage',
+  'encCommentMessage',
+  'pollResultSnapshotMessage',
+  'albumMessage',
+  'associatedChildMessage',
+  'statusMentionMessage',
+  'groupStatusMentionMessage',
+  'groupStatusMessage',
+  'statusAddYours',
+  'statusNotificationMessage',
+  'statusQuestionAnswerMessage',
+  'statusQuotedMessage',
+  'statusStickerInteractionMessage',
+  'limitSharingMessage',
+  'botInvokeMessage',
+  'botTaskMessage',
+  'botForwardedMessage',
+  'richResponseMessage',
+  'secretEncryptedMessage',
+  'newsletterAdminInviteMessage',
+  'groupMentionedMessage',
 ]);
 
 /** An emoji reaction to another message; emoji '' means the reaction was removed. */
@@ -53,6 +87,10 @@ export function extractContent(msg: WAMessage): ExtractedContent | null {
       out.mediaType = 'video';
       out.text = m.videoMessage?.caption ?? '';
       out.mimetype = m.videoMessage?.mimetype ?? 'video/mp4';
+      break;
+    case 'ptvMessage': // round video note
+      out.mediaType = 'video';
+      out.mimetype = m.ptvMessage?.mimetype ?? 'video/mp4';
       break;
     case 'audioMessage':
       out.mediaType = 'audio';

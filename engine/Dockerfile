@@ -1,4 +1,4 @@
-# BatSols engine — WhatsApp sessions, campaigns, lead finder, automations.
+# BatWos engine — WhatsApp sessions, campaigns, lead finder, automations.
 # The Playwright image ships Chromium + system deps for the browser scraper.
 FROM mcr.microsoft.com/playwright:v1.63.0-noble
 

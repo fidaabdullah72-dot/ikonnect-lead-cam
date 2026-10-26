@@ -1,4 +1,4 @@
-# BatSols on a single server (Oracle Cloud Always Free, or any Linux VM with Docker).
+# BatWos on a single server (Oracle Cloud Always Free, or any Linux VM with Docker).
 # Settings come from deploy/oracle/.env (copy .env.example). Start/update with:
 #   docker compose -f deploy/oracle/docker-compose.yml --env-file deploy/oracle/.env up -d --build
 name: batsols

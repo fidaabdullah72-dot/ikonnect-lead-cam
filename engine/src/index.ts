@@ -1,5 +1,5 @@
 /**
- * BatSols engine: WhatsApp sessions, campaign runner, outbox, lead searches,
+ * BatWos engine: WhatsApp sessions, campaign runner, outbox, lead searches,
  * background jobs and automations. Stateless apart from the database — safe
  * to restart at any time.
  */
@@ -20,7 +20,7 @@ import { listenForSignals } from './signals';
 import { browserAvailable } from './scraper/browser';
 
 async function main() {
-  log.info({ instance: config.instanceId, version: config.version }, 'BatSols engine starting');
+  log.info({ instance: config.instanceId, version: config.version }, 'BatWos engine starting');
 
   // Health = "process is up". It must NOT wait for the lease: on a Render web
   // service the old instance is only stopped (and releases the lease) once the

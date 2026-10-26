@@ -83,7 +83,7 @@ export function NumbersView() {
       <PageHeader
         icon={<Smartphone />}
         title="WhatsApp numbers"
-        description="Each teammate links their own WhatsApp. BatSols keeps every number connected and sending safely."
+        description="Each teammate links their own WhatsApp. BatWos keeps every number connected and sending safely."
         actions={
           can.write && (
             <Button variant="whatsapp" onClick={() => setConnect({ open: true, account: null })}>
@@ -94,7 +94,7 @@ export function NumbersView() {
       />
 
       {!engine.online && !engine.isLoading && (
-        <Callout tone="warning" title="The BatSols engine is offline" className="mb-6">
+        <Callout tone="warning" title="The BatWos engine is offline" className="mb-6">
           Numbers can’t connect or send until the engine is running. Messages and campaigns wait safely in the queue.
         </Callout>
       )}
@@ -193,7 +193,7 @@ function NumberCard({ account: a, health, onConnect, engineOnline }: { account: 
   };
 
   async function remove() {
-    if (!(await confirm({ title: `Remove “${a.label}”?`, description: 'The device is unlinked from the phone. Chat history stays in BatSols.', confirmLabel: 'Remove number', danger: true })))
+    if (!(await confirm({ title: `Remove “${a.label}”?`, description: 'The device is unlinked from the phone. Chat history stays in BatWos.', confirmLabel: 'Remove number', danger: true })))
       return;
     if (a.status === 'connected') {
       await patch({ desired_state: 'logged_out' });
@@ -387,7 +387,7 @@ function NumberSettings({
             <SwitchRow label="Share with the whole team" description="Teammates can pick this number for their campaigns and see its chats." checked={shared} onCheckedChange={setShared} />
           </div>
           <Callout tone="primary" icon={<ShieldCheck />}>
-            BatSols also adds random delays, typing indicators and breaks between batches automatically.
+            BatWos also adds random delays, typing indicators and breaks between batches automatically.
           </Callout>
         </DialogBody>
         <DialogFooter>

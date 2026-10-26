@@ -15,24 +15,31 @@ import { cleanFilters } from '@/lib/leads';
 import { qk } from '@/lib/queries';
 import { useWorkspace } from '@/lib/workspace';
 import { errorMessage, formatNumber } from '@/lib/utils';
+import { ListPicker } from '@/components/lists/list-picker';
 import { LeadPicker } from './lead-picker';
+import { NO_LEAD } from './builder/state';
 
 type PreviewRow = Pick<Lead, 'id' | 'business_name' | 'phone' | 'city' | 'category'>;
 
-/** Add more leads to a campaign — by filters (with a preview) or hand-picked. Dedupe and no-double-outreach are automatic. */
+type Mode = 'lists' | 'filters' | 'pick';
+
+/** Add more leads to a campaign — from lead lists, by filters (with a preview) or hand-picked. Dedupe and no-double-outreach are automatic. */
 export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boolean; onOpenChange: (o: boolean) => void; campaignId: string }) {
   const { workspace } = useWorkspace();
   const qc = useQueryClient();
-  const [mode, setMode] = React.useState<'filters' | 'pick'>('filters');
+  const [mode, setMode] = React.useState<Mode>('lists');
   const [filters, setFilters] = React.useState<LeadFilters>({});
+  const [lists, setLists] = React.useState<string[]>([]);
   const [picked, setPicked] = React.useState<string[]>([]);
   const [busy, setBusy] = React.useState(false);
   const base: LeadFilters = { sendable: true, not_in_active_campaign: true, exclude_campaign_id: campaignId };
-  const effective = cleanFilters(mode === 'filters' ? { ...filters, ...base } : { ...base, ids: picked });
+  const effective = cleanFilters(
+    mode === 'filters' ? { ...filters, ...base } : mode === 'lists' ? { ...base, list_ids: lists.length ? lists : [NO_LEAD] } : { ...base, ids: picked },
+  );
 
   const preview = useQuery({
     queryKey: ['add-leads-preview', campaignId, effective],
-    enabled: open && (mode === 'filters' || picked.length > 0),
+    enabled: open && (mode === 'filters' || (mode === 'lists' ? lists.length > 0 : picked.length > 0)),
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const { data, error, count } = await getSupabase()
@@ -44,7 +51,7 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
       return { rows: (data ?? []) as PreviewRow[], total: count ?? 0 };
     },
   });
-  const total = mode === 'pick' && !picked.length ? 0 : (preview.data?.total ?? 0);
+  const total = (mode === 'pick' && !picked.length) || (mode === 'lists' && !lists.length) ? 0 : (preview.data?.total ?? 0);
 
   async function add() {
     setBusy(true);
@@ -54,7 +61,10 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
     toast.success(`${formatNumber(data as number)} leads added`);
     qc.invalidateQueries({ queryKey: qk.campaign(campaignId) });
     qc.invalidateQueries({ queryKey: ['campaign-recipients', campaignId] });
+    if (mode === 'lists') await rememberLists(campaignId, lists);
+    qc.invalidateQueries({ queryKey: ['lead-list-stats', workspace.id] });
     setPicked([]);
+    setLists([]);
     onOpenChange(false);
   }
 
@@ -62,15 +72,22 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="xl" title="Add leads to this campaign" description="Leads already in this or another active campaign, opted out or without WhatsApp are skipped automatically.">
         <DialogBody className="space-y-4">
-          <Segmented<'filters' | 'pick'>
+          <Segmented<Mode>
             value={mode}
             onChange={setMode}
             options={[
+              { value: 'lists', label: 'From lead lists' },
               { value: 'filters', label: 'Leads matching filters' },
               { value: 'pick', label: 'Pick leads' },
             ]}
           />
-          {mode === 'filters' ? <FilterBar filters={filters} onChange={setFilters} /> : <LeadPicker selected={picked} onChange={setPicked} base={base} />}
+          {mode === 'lists' ? (
+            <ListPicker selected={lists} onChange={setLists} />
+          ) : mode === 'filters' ? (
+            <FilterBar filters={filters} onChange={setFilters} />
+          ) : (
+            <LeadPicker selected={picked} onChange={setPicked} base={base} />
+          )}
           <div className="overflow-hidden rounded-xl border border-border">
             <div className="flex items-center justify-between gap-3 bg-primary-soft px-4 py-2.5 text-[13.5px]">
               <span>
@@ -78,7 +95,7 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
               </span>
               {preview.isFetching && <Spinner className="size-4" />}
             </div>
-            {mode === 'filters' && (preview.data?.rows.length ?? 0) > 0 && (
+            {mode !== 'pick' && (preview.data?.rows.length ?? 0) > 0 && (
               <ul className="divide-y divide-border">
                 {preview.data!.rows.map((l) => (
                   <li key={l.id} className="flex items-center gap-3 px-4 py-2 text-[13px]">
@@ -108,4 +125,15 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
       </DialogContent>
     </Dialog>
   );
+}
+
+/** Record on the campaign which lists its leads came from, so each list shows the campaigns that used it. */
+export async function rememberLists(campaignId: string, listIds: string[]) {
+  const sb = getSupabase();
+  const { data } = await sb.from('campaigns').select('audience').eq('id', campaignId).maybeSingle();
+  if (!data) return;
+  const current = data.audience?.list_ids ?? [];
+  const next = [...new Set([...current, ...listIds])];
+  if (next.length === current.length) return;
+  await sb.from('campaigns').update({ audience: { ...data.audience, list_ids: next } }).eq('id', campaignId);
 }

@@ -4,16 +4,17 @@ import * as React from 'react';
 import Papa from 'papaparse';
 import { ArrowRight, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { normalizePhone, type Lead } from '@batsols/shared';
+import { STAGE_COLORS, normalizePhone, type Lead } from '@batsols/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
-import { Field, NativeSelect } from '@/components/ui/input';
+import { Field, Input, NativeSelect } from '@/components/ui/input';
 import { TagInput } from '@/components/ui/multi-select';
 import { Callout } from '@/components/ui/feedback';
 import { Progress } from '@/components/ui/controls';
 import { getSupabase } from '@/lib/supabase/client';
 import { useMembers, useStages } from '@/lib/queries';
 import { normalizeWebsite, useInvalidateLeads } from '@/lib/leads';
+import { useInvalidateLists, useLeadLists } from '@/lib/lists';
 import { useWorkspace } from '@/lib/workspace';
 import { cn, errorMessage, formatNumber } from '@/lib/utils';
 
@@ -48,11 +49,19 @@ function guessMapping(headers: string[]): Partial<Record<TargetKey, string>> {
   return map;
 }
 
-export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+const NEW_LIST = '__new';
+
+/** `listId`: put the imported leads into this list (the Lead lists page imports straight into a list). */
+export function ImportDialog({ open, onOpenChange, listId }: { open: boolean; onOpenChange: (o: boolean) => void; listId?: string }) {
   const { workspace, userId } = useWorkspace();
   const { stages } = useStages();
   const { members } = useMembers();
+  const { data: lists = [] } = useLeadLists();
   const invalidate = useInvalidateLeads();
+  const invalidateLists = useInvalidateLists();
+  // Every import goes into a lead list by default, so it can be messaged and tracked as one group.
+  const [list, setList] = React.useState(listId ?? NEW_LIST);
+  const [listName, setListName] = React.useState('');
   const [step, setStep] = React.useState<'upload' | 'map' | 'importing' | 'done'>('upload');
   const [fileName, setFileName] = React.useState('');
   const [rows, setRows] = React.useState<Record<string, string>[]>([]);
@@ -62,7 +71,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [stageId, setStageId] = React.useState('');
   const [ownerId, setOwnerId] = React.useState(userId);
   const [progress, setProgress] = React.useState(0);
-  const [result, setResult] = React.useState({ inserted: 0, duplicates: 0, invalid: 0 });
+  const [result, setResult] = React.useState({ inserted: 0, duplicates: 0, invalid: 0, listed: 0, listName: '' });
   const [drag, setDrag] = React.useState(false);
 
   React.useEffect(() => {
@@ -73,8 +82,9 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       setMapping({});
       setProgress(0);
       setTags([]);
+      setList(listId ?? NEW_LIST);
     }
-  }, [open]);
+  }, [open, listId]);
 
   function onFile(file: File) {
     setFileName(file.name);
@@ -91,6 +101,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         setRows(res.data);
         setMapping(guessMapping(hs));
         setTags([`import-${new Date().toISOString().slice(0, 10)}`]);
+        setListName(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 80) || 'Imported leads');
         setStep('map');
       },
       error: (err) => toast.error(err.message),
@@ -147,31 +158,59 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     }
 
     let inserted = 0;
+    let listed = 0;
     const sb = getSupabase();
     const chunk = 400;
     try {
+      let targetList = list || null;
+      let targetName = lists.find((l) => l.id === targetList)?.name ?? '';
+      if (targetList === NEW_LIST) {
+        targetName = listName.trim() || 'Imported leads';
+        const { data, error } = await sb
+          .from('lead_lists')
+          .insert({ workspace_id: workspace.id, name: targetName, description: `Imported from ${fileName}`, color: STAGE_COLORS[lists.length % STAGE_COLORS.length]!, created_by: userId })
+          .select('id')
+          .single();
+        if (error) throw error;
+        targetList = data.id;
+      }
       for (let i = 0; i < prepared.length; i += chunk) {
         const batch = prepared.slice(i, i + chunk);
         const withPhone = batch.filter((b) => b.phone);
         const noPhone = batch.filter((b) => !b.phone);
+        const ids: string[] = [];
         if (withPhone.length) {
           const { data, error } = await sb.from('leads').upsert(withPhone, { onConflict: 'workspace_id,phone', ignoreDuplicates: true }).select('id');
           if (error) throw error;
           inserted += data?.length ?? 0;
+          if (targetList) {
+            // Leads already in the workspace belong in the list too.
+            const { data: all, error: findErr } = await sb.from('leads').select('id').eq('workspace_id', workspace.id).in('phone', withPhone.map((b) => b.phone!));
+            if (findErr) throw findErr;
+            ids.push(...(all ?? []).map((r) => r.id));
+          }
         }
         if (noPhone.length) {
           const { data, error } = await sb.from('leads').insert(noPhone).select('id');
           if (error) throw error;
           inserted += data?.length ?? 0;
+          ids.push(...(data ?? []).map((r) => r.id));
+        }
+        if (targetList && ids.length) {
+          const { data, error } = await sb.rpc('lead_list_add', { p_list: targetList, p_ids: ids, p_filters: { ids } });
+          if (error) throw error;
+          listed += (data as number) ?? 0;
         }
         setProgress(Math.round(((i + batch.length) / prepared.length) * 100));
       }
+      setResult({ inserted, duplicates: prepared.length - inserted + fileDupes, invalid, listed, listName: targetList ? targetName : '' });
     } catch (err) {
       toast.error(`Import stopped: ${errorMessage(err)}`);
+      setResult({ inserted, duplicates: prepared.length - inserted + fileDupes, invalid, listed, listName: '' });
     }
-    setResult({ inserted, duplicates: prepared.length - inserted + fileDupes, invalid });
     setStep('done');
     invalidate();
+    invalidateLists();
   }
 
   const preview = rows.slice(0, 3);
@@ -255,6 +294,20 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                 </div>
               )}
               <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Add to lead list" className="sm:col-span-3" hint="Group this file's leads so you can message and track them together. Leads already in the workspace are added to the list too.">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <NativeSelect inputSize="sm" className="sm:w-64" value={list} onChange={(e) => setList(e.target.value)}>
+                      <option value={NEW_LIST}>New list…</option>
+                      {lists.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name} ({formatNumber(l.count)})
+                        </option>
+                      ))}
+                      <option value="">Don’t add to a list</option>
+                    </NativeSelect>
+                    {list === NEW_LIST && <Input inputSize="sm" className="flex-1" value={listName} onChange={(e) => setListName(e.target.value)} placeholder="List name" maxLength={80} aria-label="New list name" />}
+                  </div>
+                </Field>
                 <Field label="Add tags" className="sm:col-span-3">
                   <TagInput value={tags} onChange={setTags} />
                 </Field>
@@ -279,13 +332,13 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                   </NativeSelect>
                 </Field>
               </div>
-              <Callout tone="info">Leads whose phone number already exists in this workspace are skipped, so re-importing the same file is safe.</Callout>
+              <Callout tone="info">Leads whose phone number already exists in this workspace are not created again, so re-importing the same file is safe.</Callout>
             </DialogBody>
             <DialogFooter>
               <Button variant="ghost" onClick={() => setStep('upload')}>
                 Back
               </Button>
-              <Button variant="primary" disabled={!mapping.business_name} onClick={runImport}>
+              <Button variant="primary" disabled={!mapping.business_name || (list === NEW_LIST && !listName.trim())} onClick={runImport}>
                 Import {formatNumber(rows.length)} rows <ArrowRight />
               </Button>
             </DialogFooter>
@@ -306,8 +359,13 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               <CheckCircle2 className="mx-auto size-10 text-success" />
               <div className="mt-3 text-[16px] font-semibold">{formatNumber(result.inserted)} leads imported</div>
               <div className="mt-1 text-[13px] text-muted">
-                {formatNumber(result.duplicates)} duplicates skipped · {formatNumber(result.invalid)} rows without a business name
+                {formatNumber(result.duplicates)} already existed · {formatNumber(result.invalid)} rows without a business name
               </div>
+              {result.listName && (
+                <div className="mt-2 text-[13px] text-muted">
+                  {formatNumber(result.listed)} leads added to the list <b className="text-foreground">{result.listName}</b>
+                </div>
+              )}
             </DialogBody>
             <DialogFooter>
               <Button variant="primary" onClick={() => onOpenChange(false)}>

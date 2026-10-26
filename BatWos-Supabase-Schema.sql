@@ -1,5 +1,5 @@
 -- =============================================================================
--- BatSols — complete database setup for a NEW Supabase project
+-- BatWos — complete database setup for a NEW Supabase project
 --
 -- How to use:
 --   1. Supabase dashboard → your project → SQL Editor → New query
@@ -18,7 +18,7 @@ begin;
 -- 20261003000001_schema.sql
 -- ----------------------------------------------------------------------------
 -- ============================================================================
--- BatSols CRM — core schema
+-- BatWos CRM — core schema
 -- Every business table carries workspace_id; access is enforced by RLS
 -- (see 20261003000002_rls.sql). User references point at public.profiles so
 -- PostgREST can embed member names (profiles.id = auth.users.id).
@@ -1614,7 +1614,7 @@ end $$;
 -- 20261003000005_team_quality_automation.sql
 -- ----------------------------------------------------------------------------
 -- ============================================================================
--- BatSols v2: team chat, lead scoring & qualifier, duplicates/merge, saved
+-- BatWos v2: team chat, lead scoring & qualifier, duplicates/merge, saved
 -- segments, automations, campaign live log, number health, engine lease.
 -- ============================================================================
 
@@ -4348,6 +4348,742 @@ $$;
 revoke execute on function public.inbox_folders(uuid) from public, anon;
 
 -- ----------------------------------------------------------------------------
+-- 20261022000001_private_chats.sql
+-- ----------------------------------------------------------------------------
+-- ============================================================================
+-- Private WhatsApp chats
+--
+--   * Owners and admins see every chat with leads.
+--   * Everyone else sees only their own chats: chats on their own WhatsApp
+--     numbers and chats they sent a message in (conversations.member_ids).
+--     They no longer see admins' or other members' chats, even on shared
+--     numbers or with leads they can see.
+--   * Messages follow their chat.
+-- Safe to run more than once.
+-- ============================================================================
+
+-- The caller's own chat (or an admin): used by the messages policy.
+create or replace function public.can_view_conversation(cid uuid)
+returns boolean language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.conversations c
+    where c.id = cid
+      and public.is_member(c.workspace_id)
+      and (
+        public.is_admin(c.workspace_id)
+        or (select auth.uid()) = any (c.member_ids)
+        or exists (select 1 from public.whatsapp_accounts a where a.id = c.account_id and a.owner_id = (select auth.uid()))
+      )
+  );
+$$;
+revoke execute on function public.can_view_conversation(uuid) from public, anon;
+
+drop policy if exists "conversations: visible" on public.conversations;
+drop policy if exists "conversations: own or admin" on public.conversations;
+create policy "conversations: own or admin" on public.conversations
+  for select to authenticated using (
+    public.is_admin(workspace_id)
+    or (
+      public.is_member(workspace_id)
+      and (
+        (select auth.uid()) = any (member_ids)
+        or exists (select 1 from public.whatsapp_accounts a where a.id = account_id and a.owner_id = (select auth.uid()))
+      )
+    )
+  );
+
+drop policy if exists "conversations: writers update visible" on public.conversations;
+drop policy if exists "conversations: writers update own or admin" on public.conversations;
+create policy "conversations: writers update own or admin" on public.conversations
+  for update to authenticated
+  using (
+    public.can_write(workspace_id)
+    and (
+      public.is_admin(workspace_id)
+      or (select auth.uid()) = any (member_ids)
+      or exists (select 1 from public.whatsapp_accounts a where a.id = account_id and a.owner_id = (select auth.uid()))
+    )
+  )
+  with check (public.can_write(workspace_id));
+
+drop policy if exists "messages: visible" on public.messages;
+drop policy if exists "messages: own chats or admin" on public.messages;
+create policy "messages: own chats or admin" on public.messages
+  for select to authenticated using (
+    public.is_admin(workspace_id)
+    or (
+      public.is_member(workspace_id)
+      and (
+        (conversation_id is not null and public.can_view_conversation(conversation_id))
+        -- Typed in the dashboard and still waiting for the engine (no chat yet).
+        or (conversation_id is null and sent_by = (select auth.uid()))
+        or (conversation_id is null and exists (select 1 from public.whatsapp_accounts a where a.id = account_id and a.owner_id = (select auth.uid())))
+      )
+    )
+  );
+
+-- ----------------------------------------------------------------------------
+-- 20261022000002_remove_echo_duplicates.sql
+-- ----------------------------------------------------------------------------
+-- ============================================================================
+-- Remove duplicate copies of sent messages
+--
+-- WhatsApp reports every message we send back to us. Until now the engine
+-- could save that report as a second "sent from the phone" message before the
+-- original was saved, so messages typed in the dashboard (or sent by a
+-- campaign) showed twice in the chat. The engine no longer does that; this
+-- removes the copies already saved: an outgoing message with no sender and no
+-- campaign, in the same chat as a dashboard/campaign message with the same
+-- text, sent within 3 minutes of it. Safe to run more than once.
+-- ============================================================================
+
+delete from public.messages echo
+using public.messages original
+where echo.direction = 'out'
+  and echo.sent_by is null
+  and echo.campaign_id is null
+  and echo.conversation_id is not null
+  and original.id <> echo.id
+  and original.conversation_id = echo.conversation_id
+  and original.direction = 'out'
+  and (original.sent_by is not null or original.campaign_id is not null)
+  and original.body = echo.body
+  and coalesce(original.media_type, '') = coalesce(echo.media_type, '')
+  and abs(extract(epoch from (original.created_at - echo.created_at))) < 180;
+
+-- ----------------------------------------------------------------------------
+-- 20261023000001_fast_lead_filters.sql
+-- ----------------------------------------------------------------------------
+-- ============================================================================
+-- Fast lead filters
+--
+--   * The leads row-security rule checked the caller's membership (two
+--     lookups) for every single lead. With ~20,000 leads a filtered list took
+--     longer than the database's 8-second limit and failed, so filters looked
+--     broken. The caller's workspaces are now looked up once per query.
+--   * Search: "+92" finds numbers starting with 92 (country code), and local
+--     formats such as "0300 1234567" match the stored international number.
+--   * New filter: phone_codes (country calling codes, e.g. ["92", "44"]).
+--   * filtered_leads builds a query with only the filters in use (fast in the API).
+-- Safe to run more than once.
+-- ============================================================================
+
+-- Workspaces the caller is an active member of.
+create or replace function public.my_workspace_ids()
+returns setof uuid language sql stable security definer set search_path = ''
+as $$
+  select m.workspace_id from public.workspace_members m where m.user_id = (select auth.uid()) and m.active;
+$$;
+
+-- Workspaces where the caller sees every lead (owners, admins, viewers; members
+-- when "members see all leads" is on, the default).
+create or replace function public.my_all_leads_workspace_ids()
+returns setof uuid language sql stable security definer set search_path = ''
+as $$
+  select m.workspace_id
+  from public.workspace_members m
+  join public.workspaces w on w.id = m.workspace_id
+  where m.user_id = (select auth.uid()) and m.active
+    and (m.role in ('owner', 'admin', 'viewer') or coalesce((w.settings ->> 'members_see_all_leads')::boolean, true));
+$$;
+revoke execute on function public.my_workspace_ids() from public, anon;
+revoke execute on function public.my_all_leads_workspace_ids() from public, anon;
+
+-- Same rule as before; the membership checks run once per query (array(select …)
+-- is evaluated once), not once per lead.
+drop policy if exists "leads: visible" on public.leads;
+create policy "leads: visible" on public.leads
+  for select to authenticated using (
+    workspace_id = any (array(select public.my_all_leads_workspace_ids()))
+    or (workspace_id = any (array(select public.my_workspace_ids())) and (
+      owner_id = (select auth.uid())
+      or exists (select 1 from public.lead_list_items li where li.lead_id = leads.id and public.can_view_list(li.list_id))
+      or exists (select 1 from public.campaign_recipients r where r.lead_id = leads.id and public.can_view_campaign(r.campaign_id))
+      or exists (select 1 from public.conversations c join public.whatsapp_accounts a on a.id = c.account_id
+                 where c.lead_id = leads.id and a.owner_id = (select auth.uid()))
+    ))
+  );
+
+drop policy if exists "leads: writers update visible" on public.leads;
+create policy "leads: writers update visible" on public.leads
+  for update to authenticated
+  using (
+    public.can_write(workspace_id)
+    and (workspace_id = any (array(select public.my_all_leads_workspace_ids())) or public.can_view_lead(id))
+  )
+  with check (public.can_write(workspace_id));
+
+-- ---------------------------------------------------------------------------
+-- Lead filters (phone search, phone_codes)
+-- ---------------------------------------------------------------------------
+
+-- Built as a query with only the filters in use: the API passes the arguments as
+-- sub-queries, so a plain SQL function re-read the filter JSON for every lead
+-- (1.9–22 s on 20,000 leads, past the 8 s limit). Values are quoted with %L.
+-- Same rules as before; runs with the caller's rights, so row security applies.
+create or replace function public.filtered_leads(p_workspace uuid, p_filters jsonb default '{}'::jsonb)
+returns setof public.leads
+language plpgsql stable set search_path = ''
+as $$
+declare
+  f jsonb := coalesce(p_filters, '{}'::jsonb);
+  w text[] := array['l.workspace_id = $1'];
+  q text := nullif(btrim(coalesce(f ->> 'q', '')), '');
+  q_digits text := regexp_replace(coalesce(f ->> 'q', ''), '\D', '', 'g');
+  -- "0300 1234567" (local format): without the leading 0 it matches the stored "92300…"
+  q_local text := ltrim(regexp_replace(coalesce(f ->> 'q', ''), '\D', '', 'g'), '0');
+  v text;
+  arr text[];
+  b boolean;
+begin
+  if q is not null then
+    v := '%' || q || '%';
+    w := w || format(
+      '(l.business_name ilike %1$L or l.address ilike %1$L or l.city ilike %1$L or l.category ilike %1$L'
+      ' or l.email ilike %1$L or l.contact_name ilike %1$L or l.website ilike %1$L%2$s%3$s)',
+      v,
+      -- "+92", "+44 20": numbers starting with that country code
+      case when left(q, 1) = '+' and length(q_digits) >= 1 then format(' or l.phone like %L', q_digits || '%') else '' end,
+      case when length(q_local) >= 3 then format(' or l.phone like %L', '%' || q_local || '%') else '' end
+    );
+  end if;
+
+  v := nullif(btrim(coalesce(f ->> 'name', '')), '');
+  if v is not null then w := w || format('l.business_name ilike %L', '%' || v || '%'); end if;
+  v := nullif(lower(btrim(coalesce(f ->> 'domain', ''))), '');
+  if v is not null then w := w || format('l.website_domain like %L', '%' || v || '%'); end if;
+
+  arr := public.jarr(f -> 'stage_ids');
+  if cardinality(arr) > 0 then w := w || format('l.stage_id::text = any (%L::text[])', arr); end if;
+  if jsonb_typeof(f -> 'has_website') = 'boolean' then w := w || format('l.has_website = %L', (f ->> 'has_website')::boolean); end if;
+  v := f ->> 'website';
+  if v = 'no_site' then w := w || 'public.website_kind(l.website_domain) <> ''site'''::text;
+  elsif v is not null then w := w || format('public.website_kind(l.website_domain) = %L', v);
+  end if;
+
+  arr := public.jarr(f -> 'cities');
+  if cardinality(arr) > 0 then w := w || format('l.city = any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'countries');
+  if cardinality(arr) > 0 then w := w || format('upper(l.country) = any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'categories');
+  if cardinality(arr) > 0 then w := w || format('l.category = any (%L::text[])', arr); end if;
+  -- Phone country codes, e.g. ["92", "971"]: numbers starting with one of them
+  arr := array(select x || '%' from unnest(public.jarr(f -> 'phone_codes')) x where x ~ '^[0-9]{1,4}$');
+  if cardinality(arr) > 0 then w := w || format('l.phone like any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'tags');
+  if cardinality(arr) > 0 then w := w || format('l.tags && %L::text[]', arr); end if;
+
+  arr := public.jarr(f -> 'owner_ids');
+  b := coalesce((f ->> 'unassigned')::boolean, false);
+  if cardinality(arr) > 0 or b then
+    w := w || format('(%s)', concat_ws(' or ',
+      case when cardinality(arr) > 0 then format('l.owner_id::text = any (%L::text[])', arr) end,
+      case when b then 'l.owner_id is null' end));
+  end if;
+  arr := public.jarr(f -> 'created_by_ids');
+  if cardinality(arr) > 0 then w := w || format('l.created_by::text = any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'wa_status');
+  if cardinality(arr) > 0 then w := w || format('l.wa_status = any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'phone_types');
+  if cardinality(arr) > 0 then w := w || format('l.phone_type = any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'sources');
+  if cardinality(arr) > 0 then w := w || format('l.source = any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'tiers');
+  if cardinality(arr) > 0 then w := w || format('l.score_tier = any (%L::text[])', arr); end if;
+
+  if f ->> 'min_score' is not null then w := w || format('l.score >= %L::int', f ->> 'min_score'); end if;
+  if f ->> 'min_rating' is not null then w := w || format('coalesce(l.rating, 0) >= %L::numeric', f ->> 'min_rating'); end if;
+  if f ->> 'min_reviews' is not null then w := w || format('coalesce(l.reviews_count, 0) >= %L::int', f ->> 'min_reviews'); end if;
+  if jsonb_typeof(f -> 'opted_out') = 'boolean' then w := w || format('l.opted_out = %L', (f ->> 'opted_out')::boolean); end if;
+
+  case f ->> 'contacted'
+    when 'never' then w := w || 'l.last_contacted_at is null'::text;
+    when 'contacted' then w := w || 'l.last_contacted_at is not null'::text;
+    when 'replied' then w := w || 'l.last_replied_at is not null'::text;
+    when 'not_replied' then w := w || '(l.last_contacted_at is not null and l.last_replied_at is null)'::text;
+    else null;
+  end case;
+  if f ->> 'not_contacted_days' is not null then
+    w := w || format('(l.last_contacted_at is null or l.last_contacted_at < now() - make_interval(days => %L::int))', f ->> 'not_contacted_days');
+  end if;
+  if f ->> 'scrape_job_id' is not null then w := w || format('l.scrape_job_id = %L::uuid', public.try_uuid(f ->> 'scrape_job_id')); end if;
+  if f ->> 'created_from' is not null then w := w || format('l.created_at >= %L::timestamptz', f ->> 'created_from'); end if;
+  if f ->> 'created_to' is not null then w := w || format('l.created_at < %L::timestamptz', f ->> 'created_to'); end if;
+  if jsonb_typeof(f -> 'has_phone') = 'boolean' then w := w || format('(l.phone is not null) = %L', (f ->> 'has_phone')::boolean); end if;
+  if jsonb_typeof(f -> 'has_email') = 'boolean' then w := w || format('(coalesce(l.email, '''') <> '''') = %L', (f ->> 'has_email')::boolean); end if;
+  if coalesce((f ->> 'sendable')::boolean, false) then
+    w := w || '(l.phone is not null and not l.opted_out and l.wa_status <> ''invalid'')'::text;
+  end if;
+
+  -- never: in no campaign yet · any: in at least one campaign
+  if f ->> 'campaign' = 'never' then w := w || 'l.id not in (select public.campaign_lead_ids($1))'::text;
+  elsif f ->> 'campaign' = 'any' then w := w || 'l.id in (select public.campaign_lead_ids($1))'::text;
+  end if;
+  arr := public.jarr(f -> 'campaign_ids');
+  if cardinality(arr) > 0 then
+    w := w || format('l.id in (select public.campaign_lead_ids($1, array(select public.try_uuid(x) from unnest(%L::text[]) x)))', arr);
+  end if;
+  arr := public.jarr(f -> 'exclude_campaign_ids');
+  if cardinality(arr) > 0 then
+    w := w || format('l.id not in (select public.campaign_lead_ids($1, array(select public.try_uuid(x) from unnest(%L::text[]) x)))', arr);
+  end if;
+  -- Never let two campaigns (or two teammates) work the same lead at once.
+  if coalesce((f ->> 'not_in_active_campaign')::boolean, false) then
+    w := w || format(
+      'not exists (select 1 from public.campaign_recipients r join public.campaigns c on c.id = r.campaign_id'
+      ' where r.lead_id = l.id and c.status in (''scheduled'', ''running'', ''paused'')'
+      ' and r.status in (''pending'', ''waiting'', ''sending'') and c.id is distinct from %L::uuid)',
+      public.try_uuid(f ->> 'exclude_campaign_id'));
+  end if;
+  arr := public.jarr(f -> 'ids');
+  if cardinality(arr) > 0 then w := w || format('l.id::text = any (%L::text[])', arr); end if;
+  arr := public.jarr(f -> 'list_ids');
+  if cardinality(arr) > 0 then
+    w := w || format('exists (select 1 from public.lead_list_items li where li.lead_id = l.id and li.list_id::text = any (%L::text[]))', arr);
+  end if;
+
+  return query execute 'select l.* from public.leads l where ' || array_to_string(w, ' and ') using p_workspace;
+end;
+$$;
+
+
+-- ----------------------------------------------------------------------------
+-- 20261026000001_reply_detection_and_lists.sql
+-- ----------------------------------------------------------------------------
+-- ============================================================================
+-- Reply detection and lead lists
+--
+--   * Automatic replies (WhatsApp Business greeting / away messages) arrive a
+--     few seconds after a campaign message reaches the phone. They were
+--     counted as replies, stopped follow-ups and moved leads to "Replied".
+--     They are now flagged (messages.auto_reply), shown in the chat, and left
+--     out of every reply count. messages.delivered_at records when a message
+--     reached the lead's phone (the moment an automatic reply is sent).
+--   * A reply only counts for a campaign the lead was actually messaged in,
+--     on the number that messaged them, after the first campaign message.
+--   * Past data is corrected: automatic replies are flagged, recipients that
+--     never really replied are put back (follow-ups continue), and leads'
+--     "last replied" date and Replied stage are recalculated.
+--   * Reports, the dashboard and number health count only real replies.
+--   * lead_list_stats: per list, how many leads were contacted, replied, are
+--     in campaigns, won, and how many campaigns used the list.
+-- Safe to run more than once.
+-- ============================================================================
+
+alter table public.messages add column if not exists auto_reply boolean not null default false;
+alter table public.messages add column if not exists delivered_at timestamptz;
+
+-- ---------------------------------------------------------------------------
+-- Correct past data
+-- ---------------------------------------------------------------------------
+
+-- Incoming messages that arrived within seconds of a campaign message to the
+-- same lead on the same number: automatic replies.
+update public.messages m set auto_reply = true
+where m.direction = 'in' and not m.auto_reply
+  and exists (
+    select 1 from public.messages o
+    where o.lead_id = m.lead_id and o.account_id = m.account_id
+      and o.direction = 'out' and o.campaign_id is not null
+      and m.created_at between o.created_at - interval '5 seconds' and o.created_at + interval '20 seconds'
+  );
+
+-- Recipients marked "replied" without a real reply after their first campaign
+-- message (on the number that messaged them).
+with fake as (
+  select r.id, r.steps_sent, c.status as campaign_status,
+    (select count(*) from public.campaign_steps s where s.campaign_id = r.campaign_id) as steps
+  from public.campaign_recipients r
+  join public.campaigns c on c.id = r.campaign_id
+  where r.status = 'replied'
+    and not exists (
+      select 1 from public.messages i
+      where i.lead_id = r.lead_id and i.direction = 'in' and not i.auto_reply
+        and (r.account_id is null or i.account_id = r.account_id)
+        and i.created_at >= coalesce(
+          (select min(o.created_at) from public.messages o where o.recipient_id = r.id and o.direction = 'out'),
+          r.last_sent_at,
+          'infinity'::timestamptz
+        ) - interval '5 seconds'
+    )
+),
+fixed as (
+  update public.campaign_recipients r set
+    status = case
+      when f.steps_sent = 0 then 'skipped'
+      when f.steps_sent < f.steps and f.campaign_status in ('running', 'paused', 'scheduled') then 'waiting'
+      else 'completed'
+    end,
+    replied_at = null,
+    error = case when f.steps_sent = 0 then 'Messaged us before the campaign reached them' else r.error end,
+    next_send_at = case
+      when f.steps_sent > 0 and f.steps_sent < f.steps then greatest(coalesce(r.next_send_at, now()), now())
+      else r.next_send_at
+    end
+  from fake f
+  where r.id = f.id
+  returning r.campaign_id, r.lead_id
+)
+update public.campaign_events e
+set type = 'info', message = 'Not counted as a reply (automatic reply): ' || e.message
+from fixed x
+where e.campaign_id = x.campaign_id and e.lead_id = x.lead_id and e.type = 'replied';
+
+-- Leads' last reply = their last real reply; leads moved to "Replied" only by
+-- an automatic reply go back to the first "Contacted" stage.
+with affected as (
+  select distinct m.lead_id from public.messages m where m.auto_reply
+),
+real_reply as (
+  select a.lead_id,
+    (select max(i.created_at) from public.messages i where i.lead_id = a.lead_id and i.direction = 'in' and not i.auto_reply) as last_in
+  from affected a
+)
+update public.leads l set
+  last_replied_at = rr.last_in,
+  stage_id = case
+    when rr.last_in is null and (select s.kind from public.pipeline_stages s where s.id = l.stage_id) = 'replied'
+      then coalesce(
+        (select s.id from public.pipeline_stages s where s.workspace_id = l.workspace_id and s.kind = 'contacted' order by s.position limit 1),
+        l.stage_id)
+    else l.stage_id
+  end
+from real_reply rr
+where l.id = rr.lead_id and l.last_replied_at is distinct from rr.last_in;
+
+-- ---------------------------------------------------------------------------
+-- Reports count only real replies
+-- ---------------------------------------------------------------------------
+
+create or replace function public.dashboard_overview(p_workspace uuid, p_days integer default 14)
+returns jsonb language plpgsql stable set search_path = ''
+as $$
+declare
+  tz text;
+  today_start timestamptz;
+  since timestamptz;
+  days int := greatest(1, least(coalesce(p_days, 14), 365));
+  result jsonb;
+begin
+  if not public.is_member(p_workspace) then
+    raise exception 'Not a member of this workspace' using errcode = '42501';
+  end if;
+  select coalesce(timezone, 'UTC') into tz from public.workspaces where id = p_workspace;
+  today_start := date_trunc('day', now() at time zone tz) at time zone tz;
+  since := today_start - make_interval(days => days - 1);
+
+  with
+  lead_totals as (
+    select count(*)::int as total,
+           count(*) filter (where created_at >= now() - interval '7 days')::int as new_7d,
+           count(*) filter (where created_at >= since)::int as new_period,
+           count(*) filter (where has_website)::int as with_website,
+           count(*) filter (where not has_website)::int as without_website,
+           count(*) filter (where wa_status = 'valid')::int as on_whatsapp,
+           count(*) filter (where opted_out)::int as opted_out
+    from public.leads where workspace_id = p_workspace
+  ),
+  msg as (
+    select
+      count(*) filter (where direction = 'out' and status in ('sent', 'delivered', 'read') and created_at >= today_start)::int as sent_today,
+      count(*) filter (where direction = 'out' and status in ('sent', 'delivered', 'read'))::int as sent,
+      count(*) filter (where direction = 'out' and status in ('delivered', 'read'))::int as delivered,
+      count(*) filter (where direction = 'out' and status = 'read')::int as read,
+      count(*) filter (where direction = 'out' and status = 'failed')::int as failed,
+      count(*) filter (where direction = 'in' and not auto_reply)::int as received,
+      count(distinct lead_id) filter (where direction = 'out' and status in ('sent', 'delivered', 'read'))::int as leads_messaged,
+      count(distinct lead_id) filter (where direction = 'in' and not auto_reply)::int as leads_replied
+    from public.messages
+    where workspace_id = p_workspace and created_at >= since
+  ),
+  series as (
+    select d::date as day,
+      (select count(*) from public.messages m where m.workspace_id = p_workspace and m.direction = 'out'
+         and m.status in ('sent', 'delivered', 'read')
+         and m.created_at >= (d at time zone tz) and m.created_at < ((d + interval '1 day') at time zone tz))::int as sent,
+      (select count(*) from public.messages m where m.workspace_id = p_workspace and m.direction = 'out'
+         and m.status in ('delivered', 'read')
+         and m.created_at >= (d at time zone tz) and m.created_at < ((d + interval '1 day') at time zone tz))::int as delivered,
+      (select count(*) from public.messages m where m.workspace_id = p_workspace and m.direction = 'out'
+         and m.status = 'read'
+         and m.created_at >= (d at time zone tz) and m.created_at < ((d + interval '1 day') at time zone tz))::int as read,
+      (select count(*) from public.messages m where m.workspace_id = p_workspace and m.direction = 'in' and not m.auto_reply
+         and m.created_at >= (d at time zone tz) and m.created_at < ((d + interval '1 day') at time zone tz))::int as replies,
+      (select count(*) from public.leads l where l.workspace_id = p_workspace
+         and l.created_at >= (d at time zone tz) and l.created_at < ((d + interval '1 day') at time zone tz))::int as leads
+    from generate_series(date_trunc('day', since at time zone tz), date_trunc('day', now() at time zone tz), interval '1 day') d
+  ),
+  stages as (
+    select s.id, s.name, s.color, s.kind, s.position,
+           count(l.id)::int as count, coalesce(sum(l.deal_value), 0)::numeric as value
+    from public.pipeline_stages s
+    left join public.leads l on l.stage_id = s.id
+    where s.workspace_id = p_workspace
+    group by s.id
+  ),
+  cities as (
+    select city as name, count(*)::int as count from public.leads
+    where workspace_id = p_workspace and coalesce(city, '') <> ''
+    group by city order by count(*) desc limit 6
+  ),
+  categories as (
+    select category as name, count(*)::int as count from public.leads
+    where workspace_id = p_workspace and coalesce(category, '') <> ''
+    group by category order by count(*) desc limit 6
+  )
+  select jsonb_build_object(
+    'timezone', tz,
+    'days', days,
+    'leads', (select to_jsonb(lead_totals) from lead_totals),
+    'messages', (select to_jsonb(msg) from msg),
+    'campaigns_active', (select count(*) from public.campaigns where workspace_id = p_workspace and status in ('running', 'scheduled')),
+    'accounts_connected', (select count(*) from public.whatsapp_accounts where workspace_id = p_workspace and status = 'connected'),
+    'accounts_total', (select count(*) from public.whatsapp_accounts where workspace_id = p_workspace),
+    'won', (select jsonb_build_object('count', coalesce(sum(count), 0), 'value', coalesce(sum(value), 0)) from stages where kind = 'won'),
+    'open_value', (select coalesce(sum(value), 0) from stages where kind not in ('won', 'lost')),
+    'series', coalesce((select jsonb_agg(to_jsonb(series) order by day) from series), '[]'::jsonb),
+    'stages', coalesce((select jsonb_agg(to_jsonb(stages) order by position) from stages), '[]'::jsonb),
+    'top_cities', coalesce((select jsonb_agg(to_jsonb(cities)) from cities), '[]'::jsonb),
+    'top_categories', coalesce((select jsonb_agg(to_jsonb(categories)) from categories), '[]'::jsonb)
+  ) into result;
+
+  return result;
+end;
+$$;
+
+create or replace function public.team_performance(p_workspace uuid, p_days integer default 30)
+returns table (
+  user_id uuid, full_name text, email text, role text,
+  messages_sent integer, replies integer, leads_owned integer, won integer, won_value numeric, accounts_connected integer
+)
+language plpgsql stable set search_path = ''
+as $$
+declare
+  since timestamptz := now() - make_interval(days => greatest(1, least(coalesce(p_days, 30), 365)));
+begin
+  if not public.is_member(p_workspace) then
+    raise exception 'Not a member of this workspace' using errcode = '42501';
+  end if;
+  return query
+  select
+    m.user_id, p.full_name, p.email, m.role,
+    (select count(*) from public.messages x
+       left join public.campaigns c on c.id = x.campaign_id
+      where x.workspace_id = p_workspace and x.direction = 'out' and x.status in ('sent', 'delivered', 'read')
+        and x.created_at >= since and coalesce(x.sent_by, c.created_by) = m.user_id)::int,
+    (select count(*) from public.messages x
+       join public.whatsapp_accounts a on a.id = x.account_id
+      where x.workspace_id = p_workspace and x.direction = 'in' and not x.auto_reply and x.created_at >= since and a.owner_id = m.user_id)::int,
+    (select count(*) from public.leads l where l.workspace_id = p_workspace and l.owner_id = m.user_id)::int,
+    (select count(*) from public.leads l join public.pipeline_stages s on s.id = l.stage_id
+      where l.workspace_id = p_workspace and l.owner_id = m.user_id and s.kind = 'won')::int,
+    (select coalesce(sum(l.deal_value), 0) from public.leads l join public.pipeline_stages s on s.id = l.stage_id
+      where l.workspace_id = p_workspace and l.owner_id = m.user_id and s.kind = 'won'),
+    (select count(*) from public.whatsapp_accounts a
+      where a.workspace_id = p_workspace and a.owner_id = m.user_id and a.status = 'connected')::int
+  from public.workspace_members m
+  join public.profiles p on p.id = m.user_id
+  where m.workspace_id = p_workspace
+  order by 5 desc, 6 desc;
+end;
+$$;
+
+create or replace function public.account_health(p_workspace uuid, p_days integer default 7)
+returns table (account_id uuid, sent_today integer, sent integer, delivered integer, read integer, failed integer, replies integer)
+language plpgsql stable set search_path = ''
+as $$
+declare
+  tz text;
+  today_start timestamptz;
+  since timestamptz;
+begin
+  if not public.is_member(p_workspace) then
+    raise exception 'Not a member of this workspace' using errcode = '42501';
+  end if;
+  select coalesce(timezone, 'UTC') into tz from public.workspaces where id = p_workspace;
+  today_start := date_trunc('day', now() at time zone tz) at time zone tz;
+  since := least(today_start, now() - make_interval(days => greatest(1, least(coalesce(p_days, 7), 90))));
+  return query
+  select a.id,
+    count(m.id) filter (where m.direction = 'out' and m.status in ('sent', 'delivered', 'read') and m.created_at >= today_start)::int,
+    count(m.id) filter (where m.direction = 'out' and m.status in ('sent', 'delivered', 'read'))::int,
+    count(m.id) filter (where m.direction = 'out' and m.status in ('delivered', 'read'))::int,
+    count(m.id) filter (where m.direction = 'out' and m.status = 'read')::int,
+    count(m.id) filter (where m.direction = 'out' and m.status = 'failed')::int,
+    count(m.id) filter (where m.direction = 'in' and not m.auto_reply)::int
+  from public.whatsapp_accounts a
+  left join public.messages m on m.account_id = a.id and m.created_at >= since
+  where a.workspace_id = p_workspace
+  group by a.id;
+end;
+$$;
+
+create or replace function public.report_members(p_workspace uuid, p_from timestamptz, p_to timestamptz)
+returns table (
+  user_id uuid, full_name text, email text, role text, active boolean, teams text[],
+  messages_sent integer, delivered integer, read integer, failed integer, replies integer,
+  leads_contacted integer, leads_replied integer, leads_owned integer, leads_added integer,
+  campaigns_created integer, meetings integer, won integer, won_value numeric,
+  numbers integer, numbers_connected integer, last_active_at timestamptz
+)
+language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  me uuid := (select auth.uid());
+  everyone boolean;
+begin
+  if not public.is_member(p_workspace) then
+    raise exception 'Not a member of this workspace' using errcode = '42501';
+  end if;
+  everyone := public.sees_all(p_workspace);
+  return query
+  with mem as (
+    select m.user_id, m.role, m.active from public.workspace_members m
+    where m.workspace_id = p_workspace and (everyone or m.user_id = me)
+  ),
+  outbound as (
+    select coalesce(x.sent_by, a.owner_id) as uid, x.status, x.lead_id, x.created_at
+    from public.messages x
+    left join public.whatsapp_accounts a on a.id = x.account_id
+    where x.workspace_id = p_workspace and x.direction = 'out' and x.created_at >= p_from and x.created_at < p_to
+  ),
+  inbound as (
+    select a.owner_id as uid, x.lead_id, x.created_at
+    from public.messages x
+    join public.whatsapp_accounts a on a.id = x.account_id
+    where x.workspace_id = p_workspace and x.direction = 'in' and not x.auto_reply and x.created_at >= p_from and x.created_at < p_to
+  ),
+  o as (
+    select uid,
+      count(*) filter (where status in ('sent', 'delivered', 'read'))::int as sent,
+      count(*) filter (where status in ('delivered', 'read'))::int as delivered,
+      count(*) filter (where status = 'read')::int as read,
+      count(*) filter (where status = 'failed')::int as failed,
+      count(distinct lead_id) filter (where status in ('sent', 'delivered', 'read'))::int as contacted,
+      max(created_at) as last_out
+    from outbound group by uid
+  ),
+  i as (
+    select uid, count(*)::int as replies, count(distinct lead_id)::int as replied, max(created_at) as last_in
+    from inbound group by uid
+  ),
+  owned as (
+    select l.owner_id as uid,
+      count(*)::int as owned,
+      count(*) filter (where s.kind = 'won')::int as won,
+      coalesce(sum(l.deal_value) filter (where s.kind = 'won'), 0) as won_value
+    from public.leads l left join public.pipeline_stages s on s.id = l.stage_id
+    where l.workspace_id = p_workspace group by l.owner_id
+  ),
+  added as (
+    select l.created_by as uid, count(*)::int as n from public.leads l
+    where l.workspace_id = p_workspace and l.created_at >= p_from and l.created_at < p_to group by l.created_by
+  ),
+  camps as (
+    select c.created_by as uid, count(*)::int as n from public.campaigns c
+    where c.workspace_id = p_workspace and c.created_at >= p_from and c.created_at < p_to group by c.created_by
+  ),
+  meets as (
+    select t.assignee_id as uid, count(*)::int as n from public.tasks t
+    where t.workspace_id = p_workspace and t.type = 'meeting' and coalesce(t.due_at, t.created_at) >= p_from and coalesce(t.due_at, t.created_at) < p_to
+    group by t.assignee_id
+  ),
+  nums as (
+    select a.owner_id as uid, count(*)::int as n, count(*) filter (where a.status = 'connected')::int as c
+    from public.whatsapp_accounts a where a.workspace_id = p_workspace group by a.owner_id
+  ),
+  tms as (
+    select tm.user_id as uid, array_agg(t.name order by t.name) as names
+    from public.team_members tm join public.teams t on t.id = tm.team_id
+    where tm.workspace_id = p_workspace group by tm.user_id
+  )
+  select mem.user_id, p.full_name, p.email, mem.role, mem.active, coalesce(tms.names, '{}'),
+    coalesce(o.sent, 0), coalesce(o.delivered, 0), coalesce(o.read, 0), coalesce(o.failed, 0), coalesce(i.replies, 0),
+    coalesce(o.contacted, 0), coalesce(i.replied, 0), coalesce(owned.owned, 0), coalesce(added.n, 0),
+    coalesce(camps.n, 0), coalesce(meets.n, 0), coalesce(owned.won, 0), coalesce(owned.won_value, 0),
+    coalesce(nums.n, 0), coalesce(nums.c, 0), greatest(o.last_out, i.last_in)
+  from mem
+  join public.profiles p on p.id = mem.user_id
+  left join o on o.uid = mem.user_id
+  left join i on i.uid = mem.user_id
+  left join owned on owned.uid = mem.user_id
+  left join added on added.uid = mem.user_id
+  left join camps on camps.uid = mem.user_id
+  left join meets on meets.uid = mem.user_id
+  left join nums on nums.uid = mem.user_id
+  left join tms on tms.uid = mem.user_id
+  order by coalesce(o.sent, 0) desc, p.full_name;
+end;
+$$;
+
+create or replace function public.report_daily(p_workspace uuid, p_from timestamptz, p_to timestamptz)
+returns table (day date, user_id uuid, sent integer, replies integer)
+language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  me uuid := (select auth.uid());
+  everyone boolean;
+  tz text;
+begin
+  if not public.is_member(p_workspace) then
+    raise exception 'Not a member of this workspace' using errcode = '42501';
+  end if;
+  everyone := public.sees_all(p_workspace);
+  select coalesce(timezone, 'UTC') into tz from public.workspaces where id = p_workspace;
+  return query
+  select (x.created_at at time zone tz)::date as d,
+    case when x.direction = 'out' then coalesce(x.sent_by, a.owner_id) else a.owner_id end as uid,
+    count(*) filter (where x.direction = 'out' and x.status in ('sent', 'delivered', 'read'))::int,
+    count(*) filter (where x.direction = 'in' and not x.auto_reply)::int
+  from public.messages x
+  left join public.whatsapp_accounts a on a.id = x.account_id
+  where x.workspace_id = p_workspace and x.created_at >= p_from and x.created_at < p_to
+    and (everyone or (case when x.direction = 'out' then coalesce(x.sent_by, a.owner_id) else a.owner_id end) = me)
+  group by 1, 2
+  order by 1;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Lead list tracking
+-- ---------------------------------------------------------------------------
+
+-- One row per list the caller can see. Runs with the caller's rights.
+create or replace function public.lead_list_stats(p_workspace uuid)
+returns table (
+  list_id uuid, total integer, sendable integer, contacted integer, replied integer, opted_out integer,
+  in_campaigns integer, in_active_campaigns integer, won integer, campaigns integer, last_added_at timestamptz
+)
+language sql stable set search_path = ''
+as $$
+  select li.list_id,
+    count(*)::int,
+    count(*) filter (where l.phone is not null and not l.opted_out and l.wa_status <> 'invalid')::int,
+    count(*) filter (where l.last_contacted_at is not null)::int,
+    count(*) filter (where l.last_replied_at is not null)::int,
+    count(*) filter (where l.opted_out)::int,
+    count(*) filter (where exists (select 1 from public.campaign_recipients r where r.lead_id = l.id))::int,
+    count(*) filter (where exists (
+      select 1 from public.campaign_recipients r join public.campaigns c on c.id = r.campaign_id
+      where r.lead_id = l.id and c.status in ('scheduled', 'running', 'paused') and r.status in ('pending', 'waiting', 'sending')
+    ))::int,
+    count(*) filter (where s.kind = 'won')::int,
+    (select count(*) from public.campaigns c
+      where c.workspace_id = p_workspace
+        and (coalesce(c.audience -> 'list_ids', '[]'::jsonb) ? li.list_id::text
+             or coalesce(c.audience -> 'filters' -> 'list_ids', '[]'::jsonb) ? li.list_id::text))::int,
+    max(li.added_at)
+  from public.lead_list_items li
+  join public.leads l on l.id = li.lead_id
+  left join public.pipeline_stages s on s.id = l.stage_id
+  where li.workspace_id = p_workspace
+  group by li.list_id;
+$$;
+revoke execute on function public.lead_list_stats(uuid) from public, anon;
+grant execute on function public.lead_list_stats(uuid) to authenticated;
+
+-- ----------------------------------------------------------------------------
 -- Record the applied migrations (lets `supabase db push` add future ones)
 -- ----------------------------------------------------------------------------
 create schema if not exists supabase_migrations;
@@ -4365,7 +5101,11 @@ insert into supabase_migrations.schema_migrations (version, name) values
   ('20261011000001', 'engine_signals'),
   ('20261014000001', 'shared_lead_bank'),
   ('20261017000001', 'lead_finder_deep_search'),
-  ('20261017000002', 'inbox_folders')
+  ('20261017000002', 'inbox_folders'),
+  ('20261022000001', 'private_chats'),
+  ('20261022000002', 'remove_echo_duplicates'),
+  ('20261023000001', 'fast_lead_filters'),
+  ('20261026000001', 'reply_detection_and_lists')
 on conflict (version) do nothing;
 
 commit;

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "BatSols background engine: WhatsApp sessions, campaign scheduler, Google Maps scraper",
+  "description": "BatWos background engine: WhatsApp sessions, campaign scheduler, Google Maps scraper",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/index.ts",
     "build": "node build.mjs",

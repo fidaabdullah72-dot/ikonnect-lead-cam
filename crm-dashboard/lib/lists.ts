@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { LeadList } from '@batsols/shared';
+import type { LeadList, LeadListStats } from '@batsols/shared';
 import { getSupabase } from '@/lib/supabase/client';
 import { useWorkspace } from '@/lib/workspace';
 
@@ -26,5 +26,22 @@ export function useLeadLists() {
 export function useInvalidateLists() {
   const qc = useQueryClient();
   const { workspace } = useWorkspace();
-  return () => qc.invalidateQueries({ queryKey: ['lead-lists', workspace.id] });
+  return () => {
+    qc.invalidateQueries({ queryKey: ['lead-lists', workspace.id] });
+    qc.invalidateQueries({ queryKey: ['lead-list-stats', workspace.id] });
+  };
+}
+
+/** Per-list tracking: contacted, replied, in campaigns, won (public.lead_list_stats). */
+export function useListStats() {
+  const { workspace } = useWorkspace();
+  return useQuery({
+    queryKey: ['lead-list-stats', workspace.id],
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await getSupabase().rpc('lead_list_stats', { p_workspace: workspace.id });
+      if (error) throw error;
+      return new Map((data as LeadListStats[]).map((s) => [s.list_id, s]));
+    },
+  });
 }

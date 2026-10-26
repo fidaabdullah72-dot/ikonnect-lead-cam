@@ -1,5 +1,5 @@
 -- ============================================================================
--- BatSols CRM — core schema
+-- BatWos CRM — core schema
 -- Every business table carries workspace_id; access is enforced by RLS
 -- (see 20261003000002_rls.sql). User references point at public.profiles so
 -- PostgREST can embed member names (profiles.id = auth.users.id).

@@ -2,7 +2,7 @@
   "name": "batsols",
   "private": true,
   "type": "module",
-  "description": "BatSols CRM \u2014 Google Maps lead generation + WhatsApp campaigns for teams",
+  "description": "BatWos CRM \u2014 Google Maps lead generation + WhatsApp campaigns for teams",
   "workspaces": [
     "packages/*",
     "crm-dashboard",

@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Layers, MousePointerClick, ShieldCheck, Users } from 'lucide-react';
+import { Layers, ListChecks, MousePointerClick, ShieldCheck, Users } from 'lucide-react';
 import type { Lead, LeadFilters } from '@batsols/shared';
 import { FilterBar } from '@/components/leads/filter-bar';
 import { LeadPicker } from '@/components/campaigns/lead-picker';
+import { ListPicker } from '@/components/lists/list-picker';
 import { Card } from '@/components/ui/card';
 import { SwitchRow } from '@/components/ui/controls';
 import { Callout } from '@/components/ui/feedback';
@@ -17,12 +18,12 @@ import { getSupabase } from '@/lib/supabase/client';
 import { cleanFilters } from '@/lib/leads';
 import { useWorkspace } from '@/lib/workspace';
 import { cn, formatNumber } from '@/lib/utils';
-import { NO_LEAD, effectiveFilters, type BuilderState } from './state';
+import { audienceFilters, effectiveFilters, type BuilderState } from './state';
 
 export function useAudienceCount(audience: BuilderState['audience'], skipLandlines: boolean, excludeCampaignId?: string) {
   const { workspace } = useWorkspace();
   const filters = cleanFilters({ ...effectiveFilters(audience, skipLandlines), ...(excludeCampaignId ? { exclude_campaign_id: excludeCampaignId } : {}) });
-  const raw = cleanFilters(audience.mode === 'selection' ? { ids: audience.ids?.length ? audience.ids : [NO_LEAD] } : audience.filters);
+  const raw = cleanFilters(audienceFilters(audience));
   return useQuery({
     queryKey: ['audience-count', workspace.id, filters, raw],
     queryFn: async () => {
@@ -46,9 +47,15 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         {[
-          { mode: 'filters' as const, icon: Layers, title: 'Leads matching filters', text: 'Pick by country, city, category, website, campaign history, who added them…' },
+          {
+            mode: 'lists' as const,
+            icon: ListChecks,
+            title: a.list_ids.length ? `${formatNumber(a.list_ids.length)} lead list${a.list_ids.length === 1 ? '' : 's'}` : 'Lead lists',
+            text: 'Message one or more of your lists, e.g. an imported CSV',
+          },
+          { mode: 'filters' as const, icon: Layers, title: 'Leads matching filters', text: 'Pick by country, city, category, website, campaign history, saved filters…' },
           {
             mode: 'selection' as const,
             icon: MousePointerClick,
@@ -74,6 +81,17 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
         ))}
       </div>
 
+      {a.mode === 'lists' && (
+        <div className="space-y-3">
+          <ListPicker selected={a.list_ids} onChange={(list_ids) => setA({ list_ids })} />
+          <Card className="space-y-2 p-4">
+            <div className="text-[13px] font-medium">
+              Narrow down <span className="font-normal text-subtle">(optional) · only leads in the lists that also match these filters</span>
+            </div>
+            <FilterBar filters={a.filters} onChange={setF} hide={['list_ids']} />
+          </Card>
+        </div>
+      )}
       {a.mode === 'filters' && (
         <Card className="space-y-3 p-4">
           <FilterBar filters={a.filters} onChange={setF} />
@@ -134,7 +152,13 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
         )}
       </div>
       {count.data && count.data.eligible === 0 && (
-        <Callout tone="warning">{a.mode === 'selection' ? 'Tick at least one lead above.' : 'No leads match yet. Loosen the filters, or add leads first.'}</Callout>
+        <Callout tone="warning">{a.mode === 'selection'
+            ? 'Tick at least one lead above.'
+            : a.mode === 'lists'
+              ? a.list_ids.length
+                ? 'Nobody in these lists can be messaged right now (no phone, opted out, already in a campaign or contacted recently). Check the options above.'
+                : 'Pick at least one list above.'
+              : 'No leads match yet. Loosen the filters, or add leads first.'}</Callout>
       )}
       {(count.data?.eligible ?? 0) > 0 && <AudiencePreview audience={a} skipLandlines={state.settings.skip_landlines} excludeCampaignId={campaignId} total={count.data!.eligible} />}
     </div>

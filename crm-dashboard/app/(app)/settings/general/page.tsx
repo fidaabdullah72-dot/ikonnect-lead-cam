@@ -91,7 +91,7 @@ export default function GeneralSettingsPage() {
     <div className="space-y-6">
       {disabled && <Callout tone="info">Only owners and admins can change workspace settings.</Callout>}
       <Card>
-        <CardHeader title="Workspace" description="Name, region and defaults used across BatSols." />
+        <CardHeader title="Workspace" description="Name, region and defaults used across BatWos." />
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <Field label="Workspace name" htmlFor="name">
             <Input id="name" value={form.name} disabled={disabled} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -130,7 +130,7 @@ export default function GeneralSettingsPage() {
       </Card>
 
       <Card>
-        <CardHeader title="Automation & compliance" description="How BatSols reacts to sends and replies." />
+        <CardHeader title="Automation & compliance" description="How BatWos reacts to sends and replies." />
         <CardContent className="divide-y divide-border">
           <SwitchRow
             label="Move leads to “Contacted” after the first message"

@@ -27,7 +27,7 @@ export default function SetupPage() {
   if (isSupabaseConfigured()) redirect('/login');
   return (
     <CenteredCard wide>
-      <h1 className="text-xl font-semibold tracking-[-0.02em]">Finish setting up BatSols</h1>
+      <h1 className="text-xl font-semibold tracking-[-0.02em]">Finish setting up BatWos</h1>
       <p className="mt-1 text-[13.5px] text-muted">The app isn’t connected to a database yet. Three steps:</p>
       <ol className="mt-6 space-y-5">
         {steps.map(({ icon: Icon, title, body }, i) => (

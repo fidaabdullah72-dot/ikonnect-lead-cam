@@ -84,7 +84,7 @@ export function CampaignsView() {
           <EmptyState
             icon={<Sparkles />}
             title="Launch your first campaign"
-            description="Pick leads, write a personal message with variations, choose your numbers — BatSols handles pacing, follow-ups and replies."
+            description="Pick leads, write a personal message with variations, choose your numbers — BatWos handles pacing, follow-ups and replies."
             action={
               can.write && (
                 <Button variant="primary" onClick={() => router.push('/campaigns/new')}>

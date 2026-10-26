@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { AlertCircle, Check, CheckCheck, Clock, FileText, ImageIcon, Send, SmilePlus, Sparkles } from 'lucide-react';
+import { AlertCircle, Bot, Check, CheckCheck, Clock, FileText, ImageIcon, Send, SmilePlus, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { buildTemplateVars, renderTemplate, type Lead, type Message, type MessageTemplate } from '@batsols/shared';
 import { WhatsAppIcon } from '@/components/brand';
@@ -169,6 +169,13 @@ export function MessageBubble({ m, showCampaign, onReact, sender }: { m: Message
         <MediaChip m={m} />
         {m.body && <div className="whitespace-pre-wrap break-words">{m.body}</div>}
         <div className={cn('mt-1 flex items-center justify-end gap-1.5 text-[10.5px]', out ? 'text-[#667781] dark:text-[#8696a0]' : 'text-subtle')}>
+          {!out && m.auto_reply && (
+            <Tooltip content="A WhatsApp Business greeting or away message sent by their phone. Not counted as a reply.">
+              <span className="inline-flex items-center gap-0.5">
+                <Bot className="size-2.5" /> automatic reply
+              </span>
+            </Tooltip>
+          )}
           {showCampaign && m.campaign_id && !sender && (
             <span className="inline-flex items-center gap-0.5">
               <Sparkles className="size-2.5" /> campaign

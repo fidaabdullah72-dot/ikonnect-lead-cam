@@ -1,4 +1,4 @@
-# BatSols — Build Plan
+# BatWos — Build Plan
 
 Goal: turn the current prototype into a hosted, multi-user SaaS for the company's marketing team.
 Team members log in, connect **their own WhatsApp by scanning a QR code in the browser**, find leads

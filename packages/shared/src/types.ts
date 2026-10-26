@@ -96,6 +96,23 @@ export type LeadList = {
   updated_at: Timestamp;
 };
 
+/** public.lead_list_stats(): how a list is doing. */
+export type LeadListStats = {
+  list_id: UUID;
+  total: number;
+  /** Has a phone, not opted out, not known to be off WhatsApp. */
+  sendable: number;
+  contacted: number;
+  replied: number;
+  opted_out: number;
+  in_campaigns: number;
+  in_active_campaigns: number;
+  won: number;
+  /** Campaigns whose audience used this list. */
+  campaigns: number;
+  last_added_at: Timestamp | null;
+};
+
 export type LeadListItem = {
   list_id: UUID;
   workspace_id: UUID;
@@ -418,8 +435,10 @@ export type MessageTemplate = {
 };
 
 export type CampaignAudience = {
-  mode?: 'filters' | 'selection';
+  mode?: 'filters' | 'selection' | 'lists';
   filters?: LeadFilters;
+  /** Lead lists the audience was built from (mode 'lists'). */
+  list_ids?: UUID[] | null;
   options?: { skipActive?: boolean; skipContactedDays?: number | null; onlyVerified?: boolean };
   lead_count?: number;
 };
@@ -536,6 +555,10 @@ export type Message = {
   /** Our emoji reaction; pending until the engine has sent it. */
   reaction_out: string | null;
   reaction_out_pending: boolean;
+  /** An incoming WhatsApp Business greeting/away message: shown in the chat, never counted as a reply. */
+  auto_reply: boolean;
+  /** When an outgoing message reached the lead's phone. */
+  delivered_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
 };
@@ -976,6 +999,7 @@ export type Database = {
       engine_acquire_lease: { Args: { p_instance: string; p_ttl_seconds?: number }; Returns: boolean };
       engine_release_lease: { Args: { p_instance: string }; Returns: undefined };
       lead_list_add: { Args: { p_list: string; p_ids?: string[] | null; p_filters?: LeadFilters | null }; Returns: number };
+      lead_list_stats: { Args: { p_workspace: string }; Returns: LeadListStats[] };
       report_members: { Args: { p_workspace: string; p_from: string; p_to: string }; Returns: MemberReportRow[] };
       report_teams: { Args: { p_workspace: string; p_from: string; p_to: string }; Returns: TeamReportRow[] };
       report_campaign_senders: { Args: { p_workspace: string; p_from: string; p_to: string; p_campaign?: string | null }; Returns: CampaignSenderRow[] };

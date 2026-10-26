@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Combine every migration into one file to paste into Supabase → SQL Editor
 # (for a new project, when you don't use `supabase db push`).
-#   deploy/supabase-schema.sh > BatSols-Supabase-Schema.sql
+#   deploy/supabase-schema.sh > BatWos-Supabase-Schema.sql
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 cat <<'EOF'
 -- =============================================================================
--- BatSols — complete database setup for a NEW Supabase project
+-- BatWos — complete database setup for a NEW Supabase project
 --
 -- How to use:
 --   1. Supabase dashboard → your project → SQL Editor → New query

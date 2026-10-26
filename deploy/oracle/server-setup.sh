@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time preparation of a fresh Ubuntu server for BatSols: Docker + firewall.
+# One-time preparation of a fresh Ubuntu server for BatWos: Docker + firewall.
 # deploy.sh runs this automatically the first time; it is safe to run again.
 set -euo pipefail
 

@@ -43,7 +43,7 @@ async function lookup(q: string, country: string | null): Promise<GeoCandidate[]
   if (country) url.searchParams.set('countrycodes', country.toLowerCase());
   if (config.geocoderEmail) url.searchParams.set('email', config.geocoderEmail);
   const res = await throttled(() =>
-    fetch(url, { headers: { 'User-Agent': 'BatSols-LeadFinder/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) }),
+    fetch(url, { headers: { 'User-Agent': 'BatWos-LeadFinder/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) }),
   );
   if (!res.ok) throw new Error(`Geocoder error ${res.status}`);
   return ((await res.json()) as GeoCandidate[]).filter((p) => p.lat && p.lon && p.boundingbox?.length === 4);

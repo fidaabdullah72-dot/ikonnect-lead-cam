@@ -363,7 +363,7 @@ export class CampaignRunner {
     if (lead.opted_out) return skip('Opted out');
     if (!lead.phone) return skip('No phone number');
     if (ctx.settings.skip_landlines && lead.phone_type === 'landline') return skip('Landline number');
-    if (ctx.settings.stop_on_reply && r.steps_sent > 0 && lead.last_replied_at && r.last_sent_at && lead.last_replied_at > r.last_sent_at) {
+    if (ctx.settings.stop_on_reply && r.steps_sent > 0 && lead.last_replied_at && r.last_sent_at && Date.parse(lead.last_replied_at) > Date.parse(r.last_sent_at)) {
       await this.finish(r, 'replied', null);
       return;
     }
@@ -481,7 +481,7 @@ export class CampaignRunner {
         await notify(c.workspace_id, [account.owner_id, c.created_by], {
           type: 'campaign_paused',
           title: `${account.label} hit WhatsApp's rate limit`,
-          body: 'BatSols paused this number for an hour to protect it.',
+          body: 'BatWos paused this number for an hour to protect it.',
           link: `/campaigns/${c.id}`,
         });
         return;

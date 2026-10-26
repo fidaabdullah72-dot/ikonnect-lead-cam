@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, MessageCircle, Pause, Pencil, Play, Plus, Search, Send, Split, UserRound, XCircle, AlertCircle, Info } from 'lucide-react';
+import { Activity, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, ListChecks, MessageCircle, Pause, Pencil, Play, Plus, Search, Send, Split, UserRound, XCircle, AlertCircle, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import Papa from 'papaparse';
 import { formatPhone, nextWindowStart, normalizeCampaignSettings, type CampaignEvent } from '@batsols/shared';
@@ -23,6 +23,7 @@ import { PageSpinner } from '@/components/ui/spinner';
 import { CampaignMenu, useCampaignActions } from './campaign-actions';
 import { AddLeadsDialog } from './add-leads-dialog';
 import { CAMPAIGN_STATUS, useCampaign, useCampaignEvents, useCampaignSenders, useRecipients, useVariantStats } from '@/lib/campaigns';
+import { useLeadLists } from '@/lib/lists';
 import { useAccounts, useMembers } from '@/lib/queries';
 import { useWorkspace } from '@/lib/workspace';
 import { cn, downloadFile, fullDate, formatNumber, formatPercent, timeAgo } from '@/lib/utils';
@@ -142,6 +143,7 @@ function Inner({ c, steps, stats, members, accounts, leadId, setLeadId, addOpen,
               <span>Created {timeAgo(c.created_at)}</span>
               {c.started_at && <span>· Started {fullDate(c.started_at)}</span>}
               {c.status === 'scheduled' && c.scheduled_at && <span>· Starts {fullDate(c.scheduled_at)}</span>}
+              <AudienceLists ids={[...(c.audience?.list_ids ?? []), ...(c.audience?.filters?.list_ids ?? [])]} />
             </div>
           </div>
         </div>
@@ -461,5 +463,23 @@ function Senders({ id }: { id: string }) {
         </tbody>
       </Table>
     </Card>
+  );
+}
+
+/** The lead lists a campaign's audience came from, linked to the list's leads. */
+function AudienceLists({ ids }: { ids: string[] }) {
+  const { data: lists = [] } = useLeadLists();
+  const used = lists.filter((l) => ids.includes(l.id));
+  if (!used.length) return null;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      · <ListChecks className="size-3.5" />
+      {used.map((l) => (
+        <Link key={l.id} href={`/leads?list=${l.id}`} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-px text-xs hover:border-border-strong hover:text-foreground">
+          <span className="size-2 rounded-full" style={{ background: l.color }} />
+          {l.name}
+        </Link>
+      ))}
+    </span>
   );
 }

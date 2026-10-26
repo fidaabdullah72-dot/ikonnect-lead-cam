@@ -1,4 +1,4 @@
-# BatSols
+# BatWos
 
 Find businesses on Google Maps, qualify them, and run WhatsApp campaigns with your whole team — from one
 dashboard. Each teammate connects their own WhatsApp by scanning a QR code; admins see everything and get
@@ -11,6 +11,8 @@ packages/shared/ Shared logic (templating/spintax, phone numbers, sending window
 supabase/        Database migrations (schema, row-level security, functions) + database tests
 legacy/, server/, Whatsapp Automation/   the old prototype (no longer used — safe to delete)
 ```
+
+Tech stack, architecture, deployment and operations: **[docs/BatWos-Technical-Documentation.md](docs/BatWos-Technical-Documentation.md)**.
 
 ## Features
 
@@ -129,7 +131,7 @@ npm run typecheck
 
 ## Using WhatsApp responsibly
 
-BatSols links to WhatsApp the same way WhatsApp Web does. WhatsApp does not officially allow automated cold
+BatWos links to WhatsApp the same way WhatsApp Web does. WhatsApp does not officially allow automated cold
 outreach, so numbers can be restricted or banned if they send too much too fast. The built-in safeguards
 (warm-up, limits, random gaps, breaks, variations, verification, opt-out handling) reduce that risk; they can’t
 remove it. Use established numbers, keep daily limits modest, and always honour opt-outs. WhatsApp also unlinks

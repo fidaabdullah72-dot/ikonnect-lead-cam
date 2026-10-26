@@ -1,5 +1,5 @@
 -- ============================================================================
--- BatSols v2: team chat, lead scoring & qualifier, duplicates/merge, saved
+-- BatWos v2: team chat, lead scoring & qualifier, duplicates/merge, saved
 -- segments, automations, campaign live log, number health, engine lease.
 -- ============================================================================
 

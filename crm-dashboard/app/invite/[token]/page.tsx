@@ -29,7 +29,7 @@ export default async function InvitePage({ params }: PageProps<'/invite/[token]'
   return (
     <CenteredCard>
       <p className="text-[13px] font-medium text-primary">You’re invited</p>
-      <h1 className="mt-1 text-xl font-semibold tracking-[-0.02em]">Join {invite.workspace_name} on BatSols</h1>
+      <h1 className="mt-1 text-xl font-semibold tracking-[-0.02em]">Join {invite.workspace_name} on BatWos</h1>
       <p className="mt-2 text-[13.5px] text-muted">
         {invite.invited_by_name ? `${invite.invited_by_name} invited you` : 'You were invited'} as{' '}
         <span className="font-medium text-foreground">{ROLE_LABELS[invite.role]}</span>.

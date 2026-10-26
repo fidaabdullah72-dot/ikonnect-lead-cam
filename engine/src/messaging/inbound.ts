@@ -7,7 +7,7 @@ import { isOptOut, normalizePhone, type Lead, type RecipientStatus } from '@bats
 import { db } from '../db';
 import { baileysLogger, log } from '../log';
 import { firstStageOfKind, getWorkspace, logActivity, notify, settingsOf, stagesOf, touchConversation } from '../common';
-import { errMsg, nowIso } from '../util';
+import { errMsg, nowIso, sleep } from '../util';
 import { extFromMime, extractContent, extractReaction, partnerDigits, previewOf } from '../wa/content';
 import type { WaSession } from '../wa/session';
 
@@ -17,6 +17,63 @@ const replyListeners: ReplyListener[] = [];
 export const onReply = (fn: ReplyListener) => replyListeners.push(fn);
 
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
+
+/**
+ * WhatsApp Business greeting and away messages are sent by the lead's phone the moment our message reaches it,
+ * so they arrive within seconds of the send (or of the delivery tick, if the phone was offline). People need
+ * longer than that to read a message and answer it.
+ */
+const AUTO_REPLY_WINDOW_MS = 20_000;
+/** WhatsApp's message times are whole seconds and come from its servers, ours from this machine. */
+const CLOCK_SKEW_MS = 5_000;
+
+let replyColumns: { ok: boolean; checkedAt: number } | null = null;
+/** Whether the database has messages.auto_reply and delivered_at (database update of 26 Oct 2026). */
+async function hasReplyColumns(): Promise<boolean> {
+  if (replyColumns && (replyColumns.ok || Date.now() - replyColumns.checkedAt < 5 * 60_000)) return replyColumns.ok;
+  const { error } = await db.from('messages').select('auto_reply, delivered_at').limit(1);
+  replyColumns = { ok: !error, checkedAt: Date.now() };
+  if (error) log.warn('messages.auto_reply is missing: run the database update so automatic replies can be flagged');
+  return replyColumns.ok;
+}
+
+/**
+ * The campaign of the message an incoming message at `at` automatically answers, or null when it is a real reply:
+ * it came within seconds of our last campaign message to this lead on this number being sent or delivered.
+ */
+async function autoReplyTo(accountId: string, leadId: string, at: string): Promise<string | null> {
+  const t = Date.parse(at);
+  const withDelivery = await hasReplyColumns();
+  const fetchLast = async () => {
+    const q = db
+      .from('messages')
+      .select(withDelivery ? 'id, campaign_id, status, created_at, delivered_at' : 'id, campaign_id, status, created_at')
+      .eq('account_id', accountId)
+      .eq('lead_id', leadId)
+      .eq('direction', 'out')
+      .not('campaign_id', 'is', null)
+      .lte('created_at', new Date(t + CLOCK_SKEW_MS).toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const { data } = await q.maybeSingle();
+    return data as { id: string; campaign_id: string; status: string; created_at: string; delivered_at?: string | null } | null;
+  };
+  const near = (iso: string | null | undefined) => {
+    if (!iso) return false;
+    const gap = t - Date.parse(iso);
+    return gap >= -CLOCK_SKEW_MS && gap <= AUTO_REPLY_WINDOW_MS;
+  };
+  let last = await fetchLast();
+  if (!last) return null;
+  if (near(last.created_at) || near(last.delivered_at)) return last.campaign_id;
+  // Their phone has just received our message and the delivery tick is still on its way: check again shortly.
+  if (withDelivery && last.status === 'sent' && !last.delivered_at) {
+    await sleep(3000);
+    last = await fetchLast();
+    if (last && near(last.delivered_at)) return last.campaign_id;
+  }
+  return null;
+}
 
 async function storeMedia(session: WaSession, msg: WAMessage, workspaceId: string, mimetype: string | null): Promise<string | null> {
   try {
@@ -105,6 +162,7 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
   const ts = msg.messageTimestamp ? toNumber(msg.messageTimestamp) : 0;
   const at = new Date((ts > 0 ? ts : Math.floor(Date.now() / 1000)) * 1000).toISOString();
   const direction = fromMe ? 'out' : 'in';
+  const autoReplyCampaign = fromMe ? null : await autoReplyTo(session.accountId, lead.id, at);
   const conversationId = await touchConversation({
     workspaceId,
     accountId: session.accountId,
@@ -133,11 +191,25 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
     wa_message_id: key.id,
     status: fromMe ? 'sent' : 'received',
     created_at: at,
+    ...(autoReplyCampaign && (await hasReplyColumns()) ? { auto_reply: true } : {}),
   });
   if (insErr) throw new Error(`message insert failed: ${insErr.message}`);
 
   if (fromMe) {
     await db.from('leads').update({ last_contacted_at: at }).eq('id', lead.id);
+    return;
+  }
+
+  // ---- An automatic reply: shown in the chat, but the lead hasn't answered yet -------
+  if (autoReplyCampaign) {
+    await db.from('campaign_events').insert({
+      workspace_id: workspaceId,
+      campaign_id: autoReplyCampaign,
+      lead_id: lead.id,
+      account_id: session.accountId,
+      type: 'info',
+      message: `${lead.business_name}: automatic reply, not counted as a reply`,
+    });
     return;
   }
 
@@ -156,13 +228,29 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
   if (optOut) patch.opted_out = true;
   await db.from('leads').update(patch).eq('id', lead.id);
 
-  // Stop campaign sequences for this lead.
+  // Stop campaign sequences for this lead. A reply counts for a campaign only if that campaign messaged the lead
+  // from this number before the reply; an opt-out cancels every campaign.
   const { data: active } = await db
     .from('campaign_recipients')
-    .select('id, campaign_id, status, campaigns!inner(settings, status, created_by)')
+    .select('id, campaign_id, status, steps_sent, account_id, last_sent_at, campaigns!inner(settings, status, created_by)')
     .eq('lead_id', lead.id)
     .in('status', ['pending', 'waiting', 'sending', 'completed']);
-  for (const r of (active ?? []) as unknown as Array<{ id: string; campaign_id: string; status: string; campaigns: { settings: { stop_on_reply?: boolean }; created_by: string | null } }>) {
+  type ActiveRecipient = {
+    id: string;
+    campaign_id: string;
+    status: string;
+    steps_sent: number;
+    account_id: string | null;
+    last_sent_at: string | null;
+    campaigns: { settings: { stop_on_reply?: boolean }; created_by: string | null };
+  };
+  for (const r of (active ?? []) as unknown as ActiveRecipient[]) {
+    if (!optOut) {
+      if (r.steps_sent === 0 || (r.account_id && r.account_id !== session.accountId)) continue;
+      const { data: first } = await db.from('messages').select('created_at').eq('recipient_id', r.id).eq('direction', 'out').order('created_at').limit(1).maybeSingle();
+      const firstAt = first?.created_at ?? r.last_sent_at;
+      if (firstAt && Date.parse(at) < Date.parse(firstAt) - CLOCK_SKEW_MS) continue;
+    }
     const stop = optOut || r.campaigns.settings?.stop_on_reply !== false || r.status === 'completed';
     const next: RecipientStatus = optOut ? 'cancelled' : stop ? 'replied' : (r.status as RecipientStatus);
     await db.from('campaign_recipients').update({ status: next, replied_at: at }).eq('id', r.id);
@@ -265,9 +353,15 @@ export async function handleUpdates(session: WaSession, updates: WAMessageUpdate
       .maybeSingle();
     if (!m) continue;
     if (mapped !== 'failed' && (STATUS_RANK[mapped] ?? 0) <= (STATUS_RANK[m.status] ?? 0)) continue;
+    // The moment it reached their phone, which is when a WhatsApp Business automatic reply goes out.
+    const reached = (mapped === 'delivered' || mapped === 'read') && (STATUS_RANK[m.status] ?? 0) < STATUS_RANK.delivered! && (await hasReplyColumns());
     await db
       .from('messages')
-      .update({ status: mapped, ...(mapped === 'failed' ? { error: 'WhatsApp reported a delivery error' } : {}) })
+      .update({
+        status: mapped,
+        ...(mapped === 'failed' ? { error: 'WhatsApp reported a delivery error' } : {}),
+        ...(reached ? { delivered_at: nowIso() } : {}),
+      })
       .eq('id', m.id);
     if (m.recipient_id && mapped !== 'failed') {
       const { data: r } = await db.from('campaign_recipients').select('delivery').eq('id', m.recipient_id).maybeSingle();

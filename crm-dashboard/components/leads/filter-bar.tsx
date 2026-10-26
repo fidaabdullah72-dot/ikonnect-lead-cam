@@ -177,7 +177,7 @@ export function FilterBar({
         value={filters.tiers ?? []}
         onChange={(v) => set({ tiers: v as Array<'hot' | 'warm' | 'cold'> })}
       />
-      <ListsFilter value={filters.list_ids ?? []} onChange={(v) => set({ list_ids: v })} />
+      {!hide.includes('list_ids') && <ListsFilter value={filters.list_ids ?? []} onChange={(v) => set({ list_ids: v })} />}
       <MultiSelect
         label="WhatsApp"
         icon={<WhatsAppIcon />}

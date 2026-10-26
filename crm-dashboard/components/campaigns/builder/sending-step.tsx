@@ -28,7 +28,7 @@ export function SendingStep({ state, set }: { state: BuilderState; set: (fn: (s:
   return (
     <div className="space-y-5">
       <Card>
-        <CardHeader icon={<WhatsAppIcon />} title="Send from" description="Pick one or more numbers. With several, BatSols rotates between them and each keeps its own pace and daily limit." />
+        <CardHeader icon={<WhatsAppIcon />} title="Send from" description="Pick one or more numbers. With several, BatWos rotates between them and each keeps its own pace and daily limit." />
         <CardContent>
           {accounts.length === 0 ? (
             <Callout tone="warning" title="No WhatsApp numbers yet">
@@ -160,7 +160,7 @@ export function SendingStep({ state, set }: { state: BuilderState; set: (fn: (s:
               <Input value={s.sender_name} onChange={(e) => setS({ sender_name: e.target.value })} placeholder="Sara" />
             </Field>
             <Field label="Company name in messages" hint="{{company_name}}">
-              <Input value={s.company_name} onChange={(e) => setS({ company_name: e.target.value })} placeholder="BatSols" />
+              <Input value={s.company_name} onChange={(e) => setS({ company_name: e.target.value })} placeholder="BatWos" />
             </Field>
           </div>
         </CardContent>

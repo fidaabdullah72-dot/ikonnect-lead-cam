@@ -10,9 +10,11 @@ export interface BuilderState {
   name: string;
   description: string;
   audience: {
-    mode: 'filters' | 'selection';
+    mode: 'filters' | 'selection' | 'lists';
     filters: LeadFilters;
     ids: string[] | null;
+    /** Lead lists to message (mode 'lists'); `filters` can narrow them down. */
+    list_ids: string[];
     /** Skip leads already in another active campaign (no double outreach). */
     skipActive: boolean;
     /** Skip leads contacted in the last N days (null = don't). */
@@ -34,7 +36,7 @@ export function initialState(timezone: string): BuilderState {
   return {
     name: '',
     description: '',
-    audience: { mode: 'filters', filters: {}, ids: null, skipActive: true, skipContactedDays: 30, onlyVerified: false },
+    audience: { mode: 'filters', filters: {}, ids: null, list_ids: [], skipActive: true, skipContactedDays: 30, onlyVerified: false },
     steps: [{ key: newKey(), delay_hours: 0, variants: [emptyVariant()] }],
     account_ids: [],
     settings: defaultCampaignSettings(timezone),
@@ -67,10 +69,18 @@ export const PACE_PRESETS = [
 /** Matches no lead: a hand-picked audience with nothing picked must not mean “everyone”. */
 export const NO_LEAD = '00000000-0000-0000-0000-000000000000';
 
+/** The audience before the sending rules: hand-picked leads, leads in the picked lists, or leads matching filters. */
+export function audienceFilters(a: BuilderState['audience']): LeadFilters {
+  if (a.mode === 'selection') return { ids: a.ids?.length ? a.ids : [NO_LEAD] };
+  // An empty pick must not mean "every lead".
+  if (a.mode === 'lists') return { ...a.filters, list_ids: a.list_ids.length ? a.list_ids : [NO_LEAD] };
+  return a.filters;
+}
+
 /** Filters that decide who actually receives the campaign. */
 export function effectiveFilters(a: BuilderState['audience'], skipLandlines: boolean): LeadFilters {
   return {
-    ...(a.mode === 'selection' ? { ids: a.ids?.length ? a.ids : [NO_LEAD] } : a.filters),
+    ...audienceFilters(a),
     sendable: true,
     ...(a.skipActive ? { not_in_active_campaign: true } : {}),
     ...(a.skipContactedDays ? { not_contacted_days: a.skipContactedDays } : {}),

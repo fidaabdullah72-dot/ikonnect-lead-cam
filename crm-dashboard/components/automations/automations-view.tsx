@@ -115,7 +115,7 @@ export function AutomationsView() {
       <PageHeader
         icon={<Workflow />}
         title="Automations"
-        description="When something happens to a lead, BatSols does the next step for you — instantly, 24/7."
+        description="When something happens to a lead, BatWos does the next step for you — instantly, 24/7."
         actions={
           can.write && (
             <Button variant="primary" onClick={() => setEditing({ trigger: 'keyword', conditions: {}, actions: [], enabled: true })}>

@@ -33,7 +33,12 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
   const qc = useQueryClient();
   const { workspace, userId } = useWorkspace();
   const { accounts } = useUsableAccounts();
-  const [state, setState] = React.useState<BuilderState>(() => initialState(workspace.timezone));
+  const [state, setState] = React.useState<BuilderState>(() => {
+    const s = initialState(workspace.timezone);
+    // A list handed over from the Lead lists page (/campaigns/new?list=…).
+    const list = campaignId ? null : params.get('list');
+    return list ? { ...s, audience: { ...s.audience, mode: 'lists', list_ids: [list] } } : s;
+  });
   const [step, setStep] = React.useState(0);
   const [loaded, setLoaded] = React.useState(!campaignId);
   const [existing, setExisting] = React.useState<Campaign | null>(null);
@@ -79,12 +84,27 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
         return;
       }
       setExisting(c);
-      const aud = c.audience as { mode?: BuilderState['audience']['mode']; ids?: string[] | null; filters?: BuilderState['audience']['filters']; options?: Partial<BuilderState['audience']> };
+      const aud = c.audience as {
+        mode?: BuilderState['audience']['mode'];
+        ids?: string[] | null;
+        list_ids?: string[] | null;
+        filters?: BuilderState['audience']['filters'];
+        options?: Partial<BuilderState['audience']>;
+      };
       setState({
         ...initialState(workspace.timezone),
         name: c.name,
         description: c.description ?? '',
-        audience: { ...initialState(workspace.timezone).audience, ...(aud.options ?? {}), filters: aud.filters ?? {}, ...(aud.mode === 'selection' && aud.ids ? { mode: 'selection', ids: aud.ids } : { mode: 'filters', ids: null }) },
+        audience: {
+          ...initialState(workspace.timezone).audience,
+          ...(aud.options ?? {}),
+          filters: aud.filters ?? {},
+          ...(aud.mode === 'selection' && aud.ids
+            ? { mode: 'selection', ids: aud.ids }
+            : aud.mode === 'lists'
+              ? { mode: 'lists', ids: null, list_ids: aud.list_ids ?? [] }
+              : { mode: 'filters', ids: null }),
+        },
         steps: (steps as CampaignStep[]).length
           ? (steps as CampaignStep[]).map((st) => ({ key: newKey(), delay_hours: st.delay_hours, variants: st.variants.length ? st.variants : [{ body: '' }] }))
           : initialState(workspace.timezone).steps,
@@ -113,6 +133,8 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
         mode: state.audience.mode,
         filters: cleanFilters(state.audience.filters),
         ids: state.audience.mode === 'selection' ? (state.audience.ids ?? []) : null,
+        // Lists picked here, or (other modes) lists whose leads were added to the campaign later.
+        list_ids: state.audience.mode === 'lists' ? state.audience.list_ids : (existing?.audience?.list_ids ?? null),
         options: { skipActive: state.audience.skipActive, skipContactedDays: state.audience.skipContactedDays, onlyVerified: state.audience.onlyVerified },
         lead_count: count.data?.eligible ?? 0,
       };

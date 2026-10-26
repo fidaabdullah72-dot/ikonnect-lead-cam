@@ -30,7 +30,7 @@ export function Logo({ className, compact }: { className?: string; compact?: boo
       <LogoMark className="size-7" />
       {!compact && (
         <span className="text-[15.5px] font-semibold tracking-[-0.02em]">
-          Bat<span className="text-muted">Sols</span>
+          Bat<span className="text-muted">Wos</span>
         </span>
       )}
     </span>

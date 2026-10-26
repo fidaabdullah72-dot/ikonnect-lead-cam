@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy or update BatSols on the server, from this computer.
+# Deploy or update BatWos on the server, from this computer.
 #   deploy/oracle/deploy.sh <server-ip> [ssh-key-file]
 # First run installs Docker; every run uploads the code, rebuilds and restarts.
 # WhatsApp sessions live in the database, so numbers reconnect by themselves.
@@ -20,7 +20,7 @@ ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s' < "$ROOT/deploy/oracle/server-setup.sh"
 echo "→ Uploading code"
 rsync -az --delete -e "ssh ${SSH_OPTS[*]}" \
   --exclude node_modules --exclude .next --exclude dist --exclude .git \
-  --exclude '.env' --exclude '.env.*' --exclude '*.docx' --exclude 'BatSols-Supabase-Schema.sql' \
+  --exclude '.env' --exclude '.env.*' --exclude '*.docx' --exclude 'BatWos-Supabase-Schema.sql' \
   --exclude legacy --exclude server --exclude 'Whatsapp Automation' \
   --exclude 'supabase/.temp' --exclude 'supabase/.branches' --exclude .DS_Store \
   "$ROOT/" "$TARGET:batsols/"
