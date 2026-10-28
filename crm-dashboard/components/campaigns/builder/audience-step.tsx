@@ -18,14 +18,16 @@ import { getSupabase } from '@/lib/supabase/client';
 import { cleanFilters } from '@/lib/leads';
 import { useWorkspace } from '@/lib/workspace';
 import { cn, formatNumber } from '@/lib/utils';
-import { audienceFilters, effectiveFilters, type BuilderState } from './state';
+import { LeadLimitField } from '@/components/campaigns/lead-limit';
+import { audienceFilters, audienceLimit, effectiveFilters, type BuilderState } from './state';
 
 export function useAudienceCount(audience: BuilderState['audience'], skipLandlines: boolean, excludeCampaignId?: string) {
   const { workspace } = useWorkspace();
   const filters = cleanFilters({ ...effectiveFilters(audience, skipLandlines), ...(excludeCampaignId ? { exclude_campaign_id: excludeCampaignId } : {}) });
   const raw = cleanFilters(audienceFilters(audience));
+  const limit = audienceLimit(audience);
   return useQuery({
-    queryKey: ['audience-count', workspace.id, filters, raw],
+    queryKey: ['audience-count', workspace.id, filters, raw, limit],
     queryFn: async () => {
       const sb = getSupabase();
       const [eligible, matching, unknownWa] = await Promise.all([
@@ -34,7 +36,14 @@ export function useAudienceCount(audience: BuilderState['audience'], skipLandlin
         sb.rpc('filtered_leads', { p_workspace: workspace.id, p_filters: { ...filters, wa_status: ['unknown'] } }, { count: 'exact', head: true }),
       ]);
       if (eligible.error) throw eligible.error;
-      return { eligible: eligible.count ?? 0, matching: matching.count ?? 0, unknownWa: unknownWa.count ?? 0 };
+      const available = eligible.count ?? 0;
+      // `eligible`: who will actually get it (capped by "how many leads"); `available`: everyone who could.
+      return {
+        eligible: limit ? Math.min(limit, available) : available,
+        available,
+        matching: matching.count ?? 0,
+        unknownWa: limit ? Math.min(limit, unknownWa.count ?? 0) : (unknownWa.count ?? 0),
+      };
     },
   });
 }
@@ -100,6 +109,15 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
       {a.mode === 'selection' && <LeadPicker selected={a.ids ?? []} onChange={(ids) => setA({ ids })} base={{ sendable: true }} />}
 
       <Card className="divide-y divide-border px-4">
+        {a.mode !== 'selection' && (
+          <div className="flex flex-col gap-3 py-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-[13.5px] font-medium">How many leads</div>
+              <div className="mt-0.5 text-[12.5px] text-muted">Message only this many of the matching leads — the best-scored first. “All” sends to everyone who matches.</div>
+            </div>
+            <LeadLimitField value={a.limit} onChange={(limit) => setA({ limit })} available={count.data?.available} />
+          </div>
+        )}
         <SwitchRow
           label="Skip leads already in another active campaign"
           description="Guarantees no business gets messages from two campaigns — or two teammates — at once."
@@ -138,9 +156,12 @@ export function AudienceStep({ state, set, campaignId }: { state: BuilderState; 
             <>
               <div className="text-[15px] font-semibold">
                 <span className="tabular text-primary">{formatNumber(count.data?.eligible ?? 0)}</span> leads will receive this campaign
+                {audienceLimit(a) && (count.data?.available ?? 0) > (count.data?.eligible ?? 0) && (
+                  <span className="font-normal text-muted"> · first {formatNumber(count.data!.eligible)} of {formatNumber(count.data!.available)} by score</span>
+                )}
               </div>
               <div className="text-[12.5px] text-muted">
-                {formatNumber(count.data?.matching ?? 0)} match · {formatNumber((count.data?.matching ?? 0) - (count.data?.eligible ?? 0))} excluded (no phone, opted out, not on WhatsApp, landline or already in a campaign)
+                {formatNumber(count.data?.matching ?? 0)} match · {formatNumber((count.data?.matching ?? 0) - (count.data?.available ?? 0))} excluded (no phone, opted out, not on WhatsApp, landline or already in a campaign)
               </div>
             </>
           )}
@@ -176,6 +197,8 @@ function AudiencePreview({ audience, skipLandlines, excludeCampaignId, total }: 
         .rpc('filtered_leads', { p_workspace: workspace.id, p_filters: filters })
         .select('id, business_name, phone, city, country, category, website_domain, score')
         .order('score', { ascending: false })
+        .order('created_at', { ascending: false })
+        .order('id')
         .limit(15);
       if (error) throw error;
       return data as Array<Pick<Lead, 'id' | 'business_name' | 'phone' | 'city' | 'country' | 'category' | 'website_domain'>>;

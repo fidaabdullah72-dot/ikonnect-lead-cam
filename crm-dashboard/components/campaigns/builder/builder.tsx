@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { PageSpinner } from '@/components/ui/spinner';
 import { getSupabase } from '@/lib/supabase/client';
 import { cleanFilters } from '@/lib/leads';
+import { pickTopLeadIds } from '@/lib/campaigns';
 import { qk, useUsableAccounts } from '@/lib/queries';
 import { useWorkspace } from '@/lib/workspace';
 import { cn, errorMessage } from '@/lib/utils';
@@ -18,7 +19,7 @@ import { AudienceStep, useAudienceCount } from './audience-step';
 import { MessagesStep } from './messages-step';
 import { ReviewStep, useChecks } from './review-step';
 import { SendingStep } from './sending-step';
-import { effectiveFilters, initialState, newKey, type BuilderState } from './state';
+import { NO_LEAD, audienceLimit, effectiveFilters, initialState, newKey, type BuilderState } from './state';
 
 const STEPS = [
   { id: 'audience', label: 'Audience', icon: Users, hint: 'Who gets it' },
@@ -135,7 +136,12 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
         ids: state.audience.mode === 'selection' ? (state.audience.ids ?? []) : null,
         // Lists picked here, or (other modes) lists whose leads were added to the campaign later.
         list_ids: state.audience.mode === 'lists' ? state.audience.list_ids : (existing?.audience?.list_ids ?? null),
-        options: { skipActive: state.audience.skipActive, skipContactedDays: state.audience.skipContactedDays, onlyVerified: state.audience.onlyVerified },
+        options: {
+          skipActive: state.audience.skipActive,
+          skipContactedDays: state.audience.skipContactedDays,
+          onlyVerified: state.audience.onlyVerified,
+          limit: audienceLimit(state.audience),
+        },
         lead_count: count.data?.eligible ?? 0,
       };
       const row = {
@@ -172,7 +178,14 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
       // Audience: drafts are rebuilt from the filters; live campaigns keep theirs.
       if (!isLive) {
         if (campaignId) await sb.from('campaign_recipients').delete().eq('campaign_id', id!).eq('status', 'pending');
-        const { error: recErr } = await sb.rpc('campaign_add_recipients', { p_campaign: id!, p_filters: { ...filters, exclude_campaign_id: id! } });
+        const scoped = { ...filters, exclude_campaign_id: id! };
+        // "How many leads": only the best-scored N of the matching leads.
+        const limit = audienceLimit(state.audience);
+        const picked = limit ? await pickTopLeadIds(workspace.id, scoped, limit) : null;
+        const { error: recErr } = await sb.rpc('campaign_add_recipients', {
+          p_campaign: id!,
+          p_filters: picked ? { ...scoped, ids: picked.length ? picked : [NO_LEAD] } : scoped,
+        });
         if (recErr) throw recErr;
       }
 

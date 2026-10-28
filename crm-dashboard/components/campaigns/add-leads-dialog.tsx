@@ -16,6 +16,8 @@ import { qk } from '@/lib/queries';
 import { useWorkspace } from '@/lib/workspace';
 import { errorMessage, formatNumber } from '@/lib/utils';
 import { ListPicker } from '@/components/lists/list-picker';
+import { pickTopLeadIds } from '@/lib/campaigns';
+import { LeadLimitField } from './lead-limit';
 import { LeadPicker } from './lead-picker';
 import { NO_LEAD } from './builder/state';
 
@@ -31,6 +33,7 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
   const [filters, setFilters] = React.useState<LeadFilters>({});
   const [lists, setLists] = React.useState<string[]>([]);
   const [picked, setPicked] = React.useState<string[]>([]);
+  const [limit, setLimit] = React.useState<number | null>(null);
   const [busy, setBusy] = React.useState(false);
   const base: LeadFilters = { sendable: true, not_in_active_campaign: true, exclude_campaign_id: campaignId };
   const effective = cleanFilters(
@@ -46,16 +49,31 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
         .rpc('filtered_leads', { p_workspace: workspace.id, p_filters: effective }, { count: 'exact' })
         .select('id, business_name, phone, city, category, score')
         .order('score', { ascending: false })
+        .order('created_at', { ascending: false })
+        .order('id')
         .limit(8);
       if (error) throw error;
       return { rows: (data ?? []) as PreviewRow[], total: count ?? 0 };
     },
   });
-  const total = (mode === 'pick' && !picked.length) || (mode === 'lists' && !lists.length) ? 0 : (preview.data?.total ?? 0);
+  const available = (mode === 'pick' && !picked.length) || (mode === 'lists' && !lists.length) ? 0 : (preview.data?.total ?? 0);
+  const cap = mode !== 'pick' ? limit : null;
+  const total = cap ? Math.min(cap, available) : available;
 
   async function add() {
     setBusy(true);
-    const { data, error } = await getSupabase().rpc('campaign_add_recipients', { p_campaign: campaignId, p_filters: effective });
+    let filters = effective;
+    try {
+      // "How many leads": only the best-scored N of the matching leads.
+      if (cap) {
+        const ids = await pickTopLeadIds(workspace.id, effective, cap);
+        filters = { ...effective, ids: ids.length ? ids : [NO_LEAD] };
+      }
+    } catch (e) {
+      setBusy(false);
+      return toast.error(errorMessage(e));
+    }
+    const { data, error } = await getSupabase().rpc('campaign_add_recipients', { p_campaign: campaignId, p_filters: filters });
     setBusy(false);
     if (error) return toast.error(errorMessage(error));
     toast.success(`${formatNumber(data as number)} leads added`);
@@ -65,6 +83,7 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
     qc.invalidateQueries({ queryKey: ['lead-list-stats', workspace.id] });
     setPicked([]);
     setLists([]);
+    setLimit(null);
     onOpenChange(false);
   }
 
@@ -88,16 +107,26 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
           ) : (
             <LeadPicker selected={picked} onChange={setPicked} base={base} />
           )}
+          {mode !== 'pick' && (
+            <div className="flex flex-col gap-2 rounded-xl border border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-[13.5px] font-medium">How many leads</div>
+                <div className="text-[12.5px] text-muted">Add only this many — the best-scored first.</div>
+              </div>
+              <LeadLimitField value={limit} onChange={setLimit} available={available} />
+            </div>
+          )}
           <div className="overflow-hidden rounded-xl border border-border">
             <div className="flex items-center justify-between gap-3 bg-primary-soft px-4 py-2.5 text-[13.5px]">
               <span>
                 <b className="tabular text-primary">{formatNumber(total)}</b> new leads will be added
+                {cap && available > total && <span className="text-muted"> · first {formatNumber(total)} of {formatNumber(available)} by score</span>}
               </span>
               {preview.isFetching && <Spinner className="size-4" />}
             </div>
             {mode !== 'pick' && (preview.data?.rows.length ?? 0) > 0 && (
               <ul className="divide-y divide-border">
-                {preview.data!.rows.map((l) => (
+                {preview.data!.rows.slice(0, total).map((l) => (
                   <li key={l.id} className="flex items-center gap-3 px-4 py-2 text-[13px]">
                     <span className="min-w-0 flex-1 truncate">
                       <span className="font-medium">{l.business_name}</span>

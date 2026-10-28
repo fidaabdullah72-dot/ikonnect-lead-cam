@@ -20,6 +20,8 @@ export interface BuilderState {
     /** Skip leads contacted in the last N days (null = don't). */
     skipContactedDays: number | null;
     onlyVerified: boolean;
+    /** Message only this many of the matching leads, best-scored first (null = all). */
+    limit: number | null;
   };
   steps: BuilderStep[];
   account_ids: string[];
@@ -36,7 +38,7 @@ export function initialState(timezone: string): BuilderState {
   return {
     name: '',
     description: '',
-    audience: { mode: 'filters', filters: {}, ids: null, list_ids: [], skipActive: true, skipContactedDays: 30, onlyVerified: false },
+    audience: { mode: 'filters', filters: {}, ids: null, list_ids: [], skipActive: true, skipContactedDays: 30, onlyVerified: false, limit: null },
     steps: [{ key: newKey(), delay_hours: 0, variants: [emptyVariant()] }],
     account_ids: [],
     settings: defaultCampaignSettings(timezone),
@@ -76,6 +78,9 @@ export function audienceFilters(a: BuilderState['audience']): LeadFilters {
   if (a.mode === 'lists') return { ...a.filters, list_ids: a.list_ids.length ? a.list_ids : [NO_LEAD] };
   return a.filters;
 }
+
+/** The "how many leads" cap; hand-picked audiences are never capped. */
+export const audienceLimit = (a: BuilderState['audience']) => (a.mode !== 'selection' && a.limit && a.limit > 0 ? a.limit : null);
 
 /** Filters that decide who actually receives the campaign. */
 export function effectiveFilters(a: BuilderState['audience'], skipLandlines: boolean): LeadFilters {

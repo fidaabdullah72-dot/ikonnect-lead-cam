@@ -1,7 +1,7 @@
 'use client';
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import type { Campaign, CampaignEvent, CampaignRecipient, CampaignSenderRow, CampaignStats, CampaignStep, Lead } from '@batsols/shared';
+import type { Campaign, CampaignEvent, CampaignRecipient, CampaignSenderRow, CampaignStats, CampaignStep, Lead, LeadFilters } from '@batsols/shared';
 import { getSupabase } from '@/lib/supabase/client';
 import { qk, useRealtime } from '@/lib/queries';
 import { useWorkspace } from '@/lib/workspace';
@@ -126,3 +126,30 @@ export const CAMPAIGN_STATUS: Record<Campaign['status'], { label: string; tone: 
   completed: { label: 'Completed', tone: 'primary' },
   cancelled: { label: 'Cancelled', tone: 'danger' },
 };
+
+/** Quick picks for "how many leads" boxes. */
+export const LEAD_LIMIT_PRESETS = [100, 200, 300, 500, 1000];
+
+/**
+ * Ids of the first `limit` leads matching `filters`, best-scored first (newest first on a tie) — the leads a
+ * "send to N leads" campaign gets. Read in pages because the API returns at most 1,000 rows per request.
+ */
+export async function pickTopLeadIds(workspaceId: string, filters: LeadFilters, limit: number): Promise<string[]> {
+  const page = 1000;
+  const ids: string[] = [];
+  while (ids.length < limit) {
+    const from = ids.length;
+    const to = Math.min(limit, from + page) - 1;
+    const { data, error } = await getSupabase()
+      .rpc('filtered_leads', { p_workspace: workspaceId, p_filters: filters })
+      .select('id')
+      .order('score', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id')
+      .range(from, to);
+    if (error) throw error;
+    ids.push(...(data ?? []).map((r) => r.id));
+    if ((data?.length ?? 0) < to - from + 1) break;
+  }
+  return ids;
+}
