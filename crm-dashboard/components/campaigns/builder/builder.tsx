@@ -149,7 +149,8 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
         description: state.description.trim() || null,
         audience,
         account_ids: state.account_ids,
-        settings: state.settings,
+        // Safe mode: stored the way the engine will apply it (no faster than SAFE_PACE).
+        settings: normalizeCampaignSettings(state.settings, workspace.timezone),
         scheduled_at: state.launch === 'schedule' ? new Date(state.scheduled_at).toISOString() : null,
       };
 

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { useRouter } from 'next/navigation';
 import { ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
-import type { LeadFilters } from '@batsols/shared';
+import { SAFE_CHECKS_PER_DAY, type LeadFilters } from '@batsols/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { Callout } from '@/components/ui/feedback';
@@ -79,7 +79,8 @@ export function TagsDialog({
   );
 }
 
-const MAX_VERIFY = 2000;
+/** Safe mode: one number checks at most this many a day (the engine enforces it too). */
+const MAX_VERIFY = SAFE_CHECKS_PER_DAY;
 
 /** Queue an engine job that checks which numbers are registered on WhatsApp. */
 export function VerifyDialog({ open, onOpenChange, selection }: { open: boolean; onOpenChange: (o: boolean) => void; selection: Selection }) {
@@ -97,7 +98,7 @@ export function VerifyDialog({ open, onOpenChange, selection }: { open: boolean;
       let ids = selection.ids;
       if (!ids) {
         const { data, error } = await getSupabase()
-          .rpc('filtered_leads', { p_workspace: workspace.id, p_filters: { ...cleanFilters(selection.filters), has_phone: true } })
+          .rpc('filtered_leads', { p_workspace: workspace.id, p_filters: { ...cleanFilters(selection.filters), has_phone: true, wa_status: ['unknown'] } })
           .select('id')
           .limit(MAX_VERIFY);
         if (error) throw error;
@@ -136,8 +137,9 @@ export function VerifyDialog({ open, onOpenChange, selection }: { open: boolean;
                 </NativeSelect>
               </Field>
               <Callout tone="info">
-                {formatNumber(Math.min(selection.count, MAX_VERIFY))} leads will be checked at a gentle pace (about 1 per second).
-                {selection.count > MAX_VERIFY && ` Only the first ${formatNumber(MAX_VERIFY)} are checked per run.`}
+                Up to {formatNumber(Math.min(selection.count, MAX_VERIFY))} unchecked leads are looked up, one every 20–40 seconds. To protect your
+                number from a ban, each WhatsApp number checks at most {formatNumber(SAFE_CHECKS_PER_DAY)} a day — run it again tomorrow for
+                more, or use a different number. Most campaigns don’t need this check at all.
               </Callout>
             </>
           )}

@@ -138,6 +138,28 @@ Main tables: `workspaces`, `workspace_members` (roles owner/admin/member/viewer,
    including campaigns that had not messaged them yet.)
 5. Opt-out keywords still cancel every campaign for that lead.
 
+### WhatsApp safe mode (always on)
+
+Numbers linked through WhatsApp Web are banned when they message many strangers quickly, look up many unknown numbers,
+or get reported. The engine enforces these rules for every campaign, old ones included (`packages/shared`
+`SAFE_PACE`, `safeDailyLimit`, `SAFE_CHECKS_PER_DAY`):
+
+| Rule | Value |
+|---|---|
+| Gap between two messages from one number | at least 2 minutes (default 2.5–5 minutes), never regular |
+| Break | at least 15 minutes after at most 10 messages (default 20 minutes after 8) |
+| New numbers (first 14 days, or after warm-up is switched on) | 10 a day (days 1–4), 20 (days 5–8), 40 (days 9–14) |
+| Any number | at most 80 messages a day |
+| "Is this number on WhatsApp?" look-ups | off by default before sending; at most 100 per number per day, 20–40 seconds apart; numbers already checked are not looked up again |
+| WhatsApp restricts a number | it rests at least 48 hours and its daily limit is halved (minimum 10) |
+| WhatsApp rate limit, or 5 failed sends in a row | the number rests 6 hours and the owner is notified |
+| Human-like behaviour | "online" only while sending, typing indicator, blue ticks 5–90 seconds after a lead's message |
+
+Not possible for free: a different, residential IP per number. All numbers on a server share its data-centre IP (extra
+IPv6 addresses from the same /64 are treated by WhatsApp as the same network). The free way to get a home/office IP is
+to run only the engine on a computer at the office (the web app stays on the server); a residential or mobile proxy per
+number is the paid way.
+
 ### Lead lists
 
 - **Import a CSV straight into a list** (Lead lists → Import CSV, or the list's menu). Leads that already exist are not
@@ -270,3 +292,10 @@ folder has its own `deploy/oracle/.env` with its own keys.
 - **Branding**: every user-facing "BatSols" is now **BatWos** (page titles, logo text, login/sign-up, settings,
   WhatsApp notices, engine messages, docs). Internal technical names stay `batsols` (see section 4).
   Also update the name in Supabase → Authentication → Email templates if they mention the old name.
+
+## 12. Release notes — 29 Oct 2026
+
+- **WhatsApp safe mode** (see section 5): enforced pacing, warm-up for new numbers, max 80 a day, limited number
+  look-ups, 48-hour rest and halved limit after a restriction, auto-pause after failures, human-like presence and read
+  receipts.
+- **How many leads**: send a campaign to only the best-scored N matching leads (100, 200, 300, … or any number).

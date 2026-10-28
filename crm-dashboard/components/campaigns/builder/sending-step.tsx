@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { CheckCircle2, Gauge, Plus, ShieldCheck, Timer } from 'lucide-react';
-import { formatPhone, warmupLimit, type CampaignSettings } from '@batsols/shared';
+import { SAFE_CHECKS_PER_DAY, SAFE_PACE, formatPhone, warmupLimit, type CampaignSettings } from '@batsols/shared';
 import { WhatsAppIcon } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -91,27 +91,27 @@ export function SendingStep({ state, set }: { state: BuilderState; set: (fn: (s:
                 className={cn('rounded-xl border p-3.5 text-left transition-colors', preset === p.id ? 'border-primary bg-primary-soft ring-1 ring-primary/30' : 'border-border hover:border-border-strong')}
               >
                 <div className="flex items-center gap-2 text-[13.5px] font-semibold">
-                  {p.label} {p.id === 'balanced' && <span className="rounded bg-success-soft px-1.5 text-[10px] font-semibold uppercase text-success">Recommended</span>}
+                  {p.label} {p.id === 'safe' && <span className="rounded bg-success-soft px-1.5 text-[10px] font-semibold uppercase text-success">Recommended</span>}
                 </div>
                 <div className="mt-0.5 text-xs text-muted">{p.hint}</div>
                 <div className="mt-2 text-[11.5px] text-subtle tabular">
-                  {p.values.min_delay_sec}–{p.values.max_delay_sec}s apart · break {p.values.batch_pause_min} min every {p.values.batch_size}
+                  {p.values.min_delay_sec / 60}–{p.values.max_delay_sec / 60} min apart · break {p.values.batch_pause_min} min every {p.values.batch_size}
                 </div>
               </button>
             ))}
           </div>
           <div className="grid gap-4 sm:grid-cols-5">
             <Field label="Min gap (sec)">
-              <Input type="number" min={10} value={s.min_delay_sec} onChange={(e) => setS({ min_delay_sec: Number(e.target.value) })} />
+              <Input type="number" min={SAFE_PACE.minDelaySec} value={s.min_delay_sec} onChange={(e) => setS({ min_delay_sec: Number(e.target.value) })} />
             </Field>
             <Field label="Max gap (sec)">
-              <Input type="number" min={10} value={s.max_delay_sec} onChange={(e) => setS({ max_delay_sec: Number(e.target.value) })} />
+              <Input type="number" min={SAFE_PACE.minMaxDelaySec} value={s.max_delay_sec} onChange={(e) => setS({ max_delay_sec: Number(e.target.value) })} />
             </Field>
             <Field label="Break every">
-              <Input type="number" min={1} value={s.batch_size} onChange={(e) => setS({ batch_size: Number(e.target.value) })} />
+              <Input type="number" min={1} max={SAFE_PACE.maxBatchSize} value={s.batch_size} onChange={(e) => setS({ batch_size: Number(e.target.value) })} />
             </Field>
             <Field label="Break (min)">
-              <Input type="number" min={0} value={s.batch_pause_min} onChange={(e) => setS({ batch_pause_min: Number(e.target.value) })} />
+              <Input type="number" min={SAFE_PACE.minBatchPauseMin} value={s.batch_pause_min} onChange={(e) => setS({ batch_pause_min: Number(e.target.value) })} />
             </Field>
             <Field label="Max / number / day" hint="Empty = number’s limit">
               <Input type="number" min={1} value={s.daily_limit ?? ''} placeholder="—" onChange={(e) => setS({ daily_limit: e.target.value ? Number(e.target.value) : null })} />
@@ -152,7 +152,12 @@ export function SendingStep({ state, set }: { state: BuilderState; set: (fn: (s:
         <CardHeader icon={<ShieldCheck />} title="Safety & personalisation" />
         <CardContent className="divide-y divide-border">
           <SwitchRow label="Show “typing…” before each message" description="The recipient sees you typing for a few seconds, like a real person." checked={s.typing} onCheckedChange={(v) => setS({ typing: v })} />
-          <SwitchRow label="Check the number is on WhatsApp before sending" description="Unknown numbers are looked up first and skipped if not registered." checked={s.verify_whatsapp} onCheckedChange={(v) => setS({ verify_whatsapp: v })} />
+          <SwitchRow
+            label="Check the number is on WhatsApp before sending"
+            description={`Off is safer: looking up many unknown numbers is a strong ban signal. When on, each number checks at most ${SAFE_CHECKS_PER_DAY} a day, then sends without checking.`}
+            checked={s.verify_whatsapp}
+            onCheckedChange={(v) => setS({ verify_whatsapp: v })}
+          />
           <SwitchRow label="Stop the sequence when they reply" description="No more follow-ups once a lead answers. They appear in the inbox." checked={s.stop_on_reply} onCheckedChange={(v) => setS({ stop_on_reply: v })} />
           <SwitchRow label="Skip landline numbers" description="Landlines rarely have WhatsApp." checked={s.skip_landlines} onCheckedChange={(v) => setS({ skip_landlines: v })} />
           <div className="grid gap-4 py-3 sm:grid-cols-2">

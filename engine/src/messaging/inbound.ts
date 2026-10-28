@@ -199,6 +199,8 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
     await db.from('leads').update({ last_contacted_at: at }).eq('id', lead.id);
     return;
   }
+  // A person would open the chat and see it (the CRM keeps it unread for the team).
+  if (type === 'notify') session.markReadSoon(key);
 
   // ---- An automatic reply: shown in the chat, but the lead hasn't answered yet -------
   if (autoReplyCampaign) {

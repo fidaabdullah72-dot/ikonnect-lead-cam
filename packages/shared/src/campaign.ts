@@ -36,17 +36,25 @@ export const DEFAULT_WINDOW = (timezone: string): SendingWindow => ({
   timezone,
 });
 
+/**
+ * Safe mode: the fastest any campaign may send, old campaigns included. WhatsApp bans numbers that message
+ * many strangers quickly, so every number waits at least 2 minutes between messages and takes a break of at
+ * least 15 minutes after every 10.
+ */
+export const SAFE_PACE = { minDelaySec: 120, minMaxDelaySec: 180, maxBatchSize: 10, minBatchPauseMin: 15 } as const;
+
 export function defaultCampaignSettings(timezone: string): CampaignSettings {
   return {
-    min_delay_sec: 45,
-    max_delay_sec: 120,
+    min_delay_sec: 150,
+    max_delay_sec: 300,
     daily_limit: null,
-    batch_size: 15,
-    batch_pause_min: 10,
+    batch_size: 8,
+    batch_pause_min: 20,
     window: DEFAULT_WINDOW(timezone),
     typing: true,
     skip_landlines: true,
-    verify_whatsapp: true,
+    // Looking up many unknown numbers is one of the strongest ban signals: off unless switched on.
+    verify_whatsapp: false,
     stop_on_reply: true,
     sender_name: '',
     company_name: '',
@@ -64,16 +72,17 @@ const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function normalizeCampaignSettings(raw: unknown, timezone: string): CampaignSettings {
   const d = defaultCampaignSettings(timezone);
   const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<CampaignSettings> & { window?: Partial<SendingWindow> };
-  const min = clamp(r.min_delay_sec, 10, 3600, d.min_delay_sec);
-  const max = clamp(r.max_delay_sec, 10, 7200, d.max_delay_sec);
+  const min = clamp(r.min_delay_sec, SAFE_PACE.minDelaySec, 3600, d.min_delay_sec);
+  const max = clamp(r.max_delay_sec, SAFE_PACE.minMaxDelaySec, 7200, d.max_delay_sec);
   const w: Partial<SendingWindow> = r.window ?? {};
   const days = Array.isArray(w.days) ? [...new Set(w.days.map(Number).filter((x) => x >= 1 && x <= 7))].sort() : d.window.days;
   return {
     min_delay_sec: Math.min(min, max),
-    max_delay_sec: Math.max(min, max),
+    // At least a minute of randomness, so gaps never look regular.
+    max_delay_sec: Math.max(min + 60, max),
     daily_limit: r.daily_limit === null || r.daily_limit === undefined ? null : clamp(r.daily_limit, 1, 1000, 40),
-    batch_size: clamp(r.batch_size, 1, 500, d.batch_size),
-    batch_pause_min: clamp(r.batch_pause_min, 0, 600, d.batch_pause_min),
+    batch_size: clamp(r.batch_size, 1, SAFE_PACE.maxBatchSize, d.batch_size),
+    batch_pause_min: clamp(r.batch_pause_min, SAFE_PACE.minBatchPauseMin, 600, d.batch_pause_min),
     window: {
       start: typeof w.start === 'string' && HM.test(w.start) ? w.start : d.window.start,
       end: typeof w.end === 'string' && HM.test(w.end) ? w.end : d.window.end,

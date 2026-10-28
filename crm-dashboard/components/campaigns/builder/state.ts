@@ -47,24 +47,25 @@ export function initialState(timezone: string): BuilderState {
   };
 }
 
+/** Safe mode: nothing faster than "Standard" (2–4 minutes apart) is allowed — see SAFE_PACE. */
 export const PACE_PRESETS = [
+  {
+    id: 'safest',
+    label: 'Safest',
+    hint: 'New, warming or recently restricted numbers',
+    values: { min_delay_sec: 240, max_delay_sec: 480, batch_size: 6, batch_pause_min: 30 },
+  },
   {
     id: 'safe',
     label: 'Safe',
-    hint: 'Best for new or warming numbers',
-    values: { min_delay_sec: 75, max_delay_sec: 180, batch_size: 12, batch_pause_min: 15 },
+    hint: 'Recommended for every number',
+    values: { min_delay_sec: 150, max_delay_sec: 300, batch_size: 8, batch_pause_min: 20 },
   },
   {
-    id: 'balanced',
-    label: 'Balanced',
-    hint: 'Recommended for established numbers',
-    values: { min_delay_sec: 45, max_delay_sec: 120, batch_size: 15, batch_pause_min: 10 },
-  },
-  {
-    id: 'fast',
-    label: 'Fast',
-    hint: 'Only for long-active numbers — higher ban risk',
-    values: { min_delay_sec: 25, max_delay_sec: 60, batch_size: 25, batch_pause_min: 5 },
+    id: 'standard',
+    label: 'Standard',
+    hint: 'Only for long-active numbers with good replies',
+    values: { min_delay_sec: 120, max_delay_sec: 240, batch_size: 10, batch_pause_min: 15 },
   },
 ] as const;
 

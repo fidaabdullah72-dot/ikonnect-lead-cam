@@ -27,7 +27,7 @@ import makeWASocket, {
   type proto,
 } from 'baileys';
 import type { Boom } from '@hapi/boom';
-import { jidToDigits, toWhatsAppJid, typingDurationMs, type WhatsappAccount } from '@batsols/shared';
+import { SAFE_CHECKS_PER_DAY, jidToDigits, toWhatsAppJid, typingDurationMs, type WhatsappAccount } from '@batsols/shared';
 import { db } from '../db';
 import { baileysLogger, log } from '../log';
 import { adminsOf, notify } from '../common';
@@ -54,6 +54,17 @@ export class NotConnectedError extends Error {
     super(`WhatsApp number “${label}” is not connected`);
   }
 }
+
+/** Safe mode: this number has used today's look-ups ("is this number on WhatsApp?"). */
+export class CheckLimitError extends Error {
+  constructor(label: string) {
+    super(`“${label}” has used today's ${SAFE_CHECKS_PER_DAY} WhatsApp number checks (safe mode)`);
+  }
+}
+
+/** Safe mode: after WhatsApp restricts a number it rests at least this long, and its daily limit is halved. */
+const RESTRICTION_PAUSE_MS = 48 * 3600_000;
+const MIN_DAILY_LIMIT_AFTER_RESTRICTION = 10;
 
 const MAX_QR_ROUNDS = 6; // ~3 minutes of QR codes before giving up
 const BACKOFF = [1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000];
@@ -114,6 +125,48 @@ export class WaSession {
   private async patchAccount(patch: Partial<WhatsappAccount>) {
     const { error } = await db.from('whatsapp_accounts').update(patch).eq('id', this.accountId);
     if (error) log.warn({ acc: this.accountId, err: error.message }, 'account update failed');
+  }
+
+  /** Update some fields of whatsapp_accounts.limits, keeping the others (WhatsApp's quota, check counters). */
+  private async mergeLimits(patch: WhatsappAccount['limits'], extra: Partial<WhatsappAccount> = {}) {
+    const { data } = await db.from('whatsapp_accounts').select('limits').eq('id', this.accountId).maybeSingle();
+    await this.patchAccount({ ...extra, limits: { ...(data?.limits ?? {}), ...patch } });
+  }
+
+  /**
+   * WhatsApp restricted this number (until `until`). Safe mode: it rests for at least 48 hours, and the first
+   * time (not on every repeat of the same restriction) its daily limit is halved for good. Returns whether this
+   * was a new restriction.
+   */
+  private async onRestricted(until: Date, type: string): Promise<boolean> {
+    const { data: row } = await db.from('whatsapp_accounts').select('paused_until, daily_limit, limits').eq('id', this.accountId).maybeSingle();
+    const now = Date.now();
+    const known = row?.limits?.timelock_until ? new Date(row.limits.timelock_until).getTime() > now : false;
+    // The 48 hours count from when the restriction is first seen; later checks of the same one don't extend them.
+    const pausedUntil = Math.max(until.getTime(), known ? 0 : now + RESTRICTION_PAUSE_MS, row?.paused_until ? new Date(row.paused_until).getTime() : 0);
+    const extra: Partial<WhatsappAccount> = { paused_until: new Date(pausedUntil).toISOString() };
+    if (!known && row && row.daily_limit > MIN_DAILY_LIMIT_AFTER_RESTRICTION) {
+      extra.daily_limit = Math.max(MIN_DAILY_LIMIT_AFTER_RESTRICTION, Math.floor(row.daily_limit / 2));
+    }
+    await this.mergeLimits({ timelock_until: until.toISOString(), timelock_type: type, checked_at: new Date().toISOString() }, extra);
+    log.warn({ acc: this.accountId, until, pausedUntil: extra.paused_until, dailyLimit: extra.daily_limit }, 'WhatsApp restricted this number; resting it');
+    return !known;
+  }
+
+  private checks: { day: string; used: number } | null = null;
+
+  /** Safe mode: count one number look-up; false once today's allowance is used. */
+  private async takeCheck(): Promise<boolean> {
+    const day = new Date().toISOString().slice(0, 10);
+    if (this.checks?.day !== day) {
+      const { data } = await db.from('whatsapp_accounts').select('limits').eq('id', this.accountId).maybeSingle();
+      const l = data?.limits;
+      this.checks = { day, used: l?.checks_day === day ? Number(l.checks_used ?? 0) : 0 };
+    }
+    if (this.checks.used >= SAFE_CHECKS_PER_DAY) return false;
+    this.checks.used++;
+    await this.mergeLimits({ checks_day: day, checks_used: this.checks.used });
+    return true;
   }
 
   private async setLinkCode(code: { qr?: string | null; pairing_code?: string | null } | null) {
@@ -220,15 +273,11 @@ export class WaSession {
     if (reachoutTimeLock) {
       if (reachoutTimeLock.isActive) {
         const until = reachoutTimeLock.timeEnforcementEnds ?? new Date(Date.now() + 3600_000);
-        log.warn({ acc: this.accountId, until }, 'WhatsApp restricted outgoing messages');
-        await this.patchAccount({
-          paused_until: until.toISOString(),
-          limits: { timelock_until: until.toISOString(), timelock_type: reachoutTimeLock.enforcementType ?? 'DEFAULT', checked_at: new Date().toISOString() },
-        });
-        await notify(this.account.workspace_id, [this.account.owner_id, ...(await adminsOf(this.account.workspace_id))], {
+        const fresh = await this.onRestricted(until, reachoutTimeLock.enforcementType ?? 'DEFAULT');
+        if (fresh) await notify(this.account.workspace_id, [this.account.owner_id, ...(await adminsOf(this.account.workspace_id))], {
           type: 'whatsapp_disconnected',
           title: `WhatsApp paused sending on “${this.account.label}”`,
-          body: `WhatsApp temporarily restricted new messages until ${until.toUTCString()}. BatWos pauses this number automatically.`,
+          body: `WhatsApp temporarily restricted new messages until ${until.toUTCString()}. BatWos rests this number for at least 48 hours and halves its daily limit.`,
           link: '/whatsapp',
         });
       }
@@ -433,14 +482,12 @@ export class WaSession {
         limits.new_chat_used = cap.used_quota ?? undefined;
         limits.cycle_end = cap.cycle_end_timestamp ? new Date(Number(cap.cycle_end_timestamp) * 1000).toISOString() : undefined;
       }
-      const patch: Partial<WhatsappAccount> = { limits };
       if (lock?.isActive && lock.timeEnforcementEnds) {
-        limits.timelock_until = lock.timeEnforcementEnds.toISOString();
-        patch.paused_until = lock.timeEnforcementEnds.toISOString();
+        await this.onRestricted(lock.timeEnforcementEnds, lock.enforcementType ?? 'DEFAULT');
       } else {
         limits.timelock_until = null;
       }
-      await this.patchAccount(patch);
+      await this.mergeLimits(limits);
     } catch (e) {
       log.debug({ acc: this.accountId, err: errMsg(e) }, 'limits refresh failed');
     }
@@ -454,6 +501,7 @@ export class WaSession {
   /** Is this number registered on WhatsApp? */
   async checkNumber(digits: string): Promise<boolean> {
     const s = this.requireSocket();
+    if (!(await this.takeCheck())) throw new CheckLimitError(this.account.label);
     const res = await s.onWhatsApp(digits);
     return Boolean(res?.[0]?.exists);
   }
@@ -469,6 +517,40 @@ export class WaSession {
     const s = this.requireSocket();
     const jid = toWhatsAppJid(digits);
     await s.sendMessage(jid, { react: { text: emoji, key: { remoteJid: jid, id: target.id, fromMe: target.fromMe } } });
+  }
+
+  private onlineTimer: NodeJS.Timeout | null = null;
+  private online = false;
+
+  /**
+   * Look like a person with WhatsApp Web open: "online" while messages go out, "offline" again after a quiet
+   * minute or two (until then the phone itself gets no notifications, as with WhatsApp Web).
+   */
+  private goOnline() {
+    const s = this.sock;
+    if (!s) return;
+    if (!this.online) {
+      this.online = true;
+      s.sendPresenceUpdate('available').catch(() => undefined);
+    }
+    if (this.onlineTimer) clearTimeout(this.onlineTimer);
+    this.onlineTimer = setTimeout(() => {
+      this.onlineTimer = null;
+      this.online = false;
+      this.sock?.sendPresenceUpdate('unavailable').catch(() => undefined);
+    }, 60_000 + Math.random() * 90_000);
+    this.onlineTimer.unref?.();
+  }
+
+  /** Blue ticks a few seconds to a minute after a lead's message arrives, as when someone glances at the chat. */
+  markReadSoon(key: WAMessageKey) {
+    const timer = setTimeout(() => {
+      const s = this.sock;
+      if (!s || this.phase !== 'open') return;
+      this.goOnline();
+      s.readMessages([key]).catch((e) => log.debug({ acc: this.accountId, err: errMsg(e) }, 'read receipt failed'));
+    }, 5_000 + Math.random() * 85_000);
+    timer.unref?.();
   }
 
   /** Send a message, optionally showing "typing…" first. Returns the WhatsApp message id. */
@@ -494,6 +576,7 @@ export class WaSession {
         /* presence is best-effort */
       }
     }
+    this.goOnline();
     let payload: AnyMessageContent;
     if (content.mediaUrl && content.mediaType === 'image') {
       payload = { image: { url: content.mediaUrl }, caption: content.text || undefined };

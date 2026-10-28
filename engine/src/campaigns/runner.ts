@@ -15,7 +15,7 @@ import {
   normalizeCampaignSettings,
   randomBetween,
   renderTemplate,
-  warmupLimit,
+  safeDailyLimit,
   type Campaign,
   type CampaignRecipient,
   type CampaignSettings,
@@ -43,6 +43,9 @@ interface Ctx {
 type Member = { user_id: string; role: string; active: boolean; permissions: Record<string, unknown>; full_name: string };
 
 const MAX_ATTEMPTS = 3;
+/** Safe mode: how long a number rests after WhatsApp's rate limit or a run of failed sends. */
+const RATE_LIMIT_PAUSE_MS = 6 * 3600_000;
+const FAIL_STREAK_PAUSE = 5;
 
 function isRateLimit(e: unknown) {
   const err = e as { output?: { statusCode?: number }; message?: string };
@@ -53,6 +56,7 @@ export class CampaignRunner {
   private busy = new Set<string>(); // accounts mid-send
   private nextAt = new Map<string, number>(); // account -> earliest next send (ms)
   private batch = new Map<string, number>(); // account -> sends since last break
+  private failStreak = new Map<string, number>(); // account -> failed sends in a row
   private variantTurn = new Map<string, number>(); // campaign -> round-robin variant counter
   private notes = new Map<string, string | null>(); // campaign -> last status note written
 
@@ -275,7 +279,8 @@ export class CampaignRunner {
 
       const tz = ctx.ws.timezone;
       const today = await sentToday(account.id, tz, c.id);
-      const numberCap = warmupLimit(account.daily_limit, account.warmup_started_at, now);
+      // Safe mode: new numbers step up 10 → 20 → 40 a day; no number sends more than 80 a day.
+      const numberCap = safeDailyLimit(account.daily_limit, account.warmup_started_at, account.created_at, now);
       if (today.total >= numberCap) {
         limited++;
         continue;
@@ -452,6 +457,7 @@ export class CampaignRunner {
       }
       await db.from('leads').update(leadPatch).eq('id', lead.id);
       await countSend(account.id, ctx.ws.timezone, c.id);
+      this.failStreak.delete(account.id);
       await this.event(c.workspace_id, c.id, 'sent', `${lead.business_name} · ${r.steps_sent === 0 ? 'first message' : `follow-up ${r.steps_sent}`} from ${account.label}`, {
         lead_id: lead.id,
         account_id: account.id,
@@ -474,19 +480,34 @@ export class CampaignRunner {
         return;
       }
       if (isRateLimit(e)) {
-        const until = new Date(Date.now() + 3600_000).toISOString();
+        this.failStreak.delete(account.id);
+        const until = new Date(Date.now() + RATE_LIMIT_PAUSE_MS).toISOString();
         await db.from('whatsapp_accounts').update({ paused_until: until }).eq('id', account.id);
         await this.release(r, 0, 'WhatsApp rate limit — retrying later');
-        await this.event(c.workspace_id, c.id, 'info', `WhatsApp slowed down ${account.label}; pausing it for 1 hour`, { account_id: account.id });
+        await this.event(c.workspace_id, c.id, 'info', `WhatsApp slowed down ${account.label}; pausing it for 6 hours`, { account_id: account.id });
         await notify(c.workspace_id, [account.owner_id, c.created_by], {
           type: 'campaign_paused',
           title: `${account.label} hit WhatsApp's rate limit`,
-          body: 'BatWos paused this number for an hour to protect it.',
+          body: 'BatWos paused this number for 6 hours to protect it.',
           link: `/campaigns/${c.id}`,
         });
         return;
       }
       const msg = errMsg(e).slice(0, 300);
+      // Safe mode: a run of failed sends is often the first sign of a restriction — rest the number.
+      const streak = (this.failStreak.get(account.id) ?? 0) + 1;
+      this.failStreak.set(account.id, streak);
+      if (streak >= FAIL_STREAK_PAUSE) {
+        this.failStreak.delete(account.id);
+        await db.from('whatsapp_accounts').update({ paused_until: new Date(Date.now() + RATE_LIMIT_PAUSE_MS).toISOString() }).eq('id', account.id);
+        await this.event(c.workspace_id, c.id, 'info', `${account.label}: ${FAIL_STREAK_PAUSE} failed sends in a row; pausing it for 6 hours`, { account_id: account.id });
+        await notify(c.workspace_id, [account.owner_id, c.created_by], {
+          type: 'campaign_paused',
+          title: `${account.label} paused after ${FAIL_STREAK_PAUSE} failed sends`,
+          body: 'Sending from this number is paused for 6 hours to protect it. Check that the phone is online and the number is not restricted.',
+          link: '/whatsapp',
+        });
+      }
       if (r.attempts >= MAX_ATTEMPTS) {
         await this.finish(r, 'failed', msg);
         await this.event(c.workspace_id, c.id, 'failed', `${lead.business_name}: ${msg}`, { lead_id: lead.id, account_id: account.id });

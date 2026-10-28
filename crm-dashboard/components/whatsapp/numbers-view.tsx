@@ -21,7 +21,7 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatPhone, warmupLimit, type AccountHealth, type WhatsappAccount } from '@batsols/shared';
+import { SAFE_CHECKS_PER_DAY, SAFE_MAX_DAILY, formatPhone, safeDailyLimit, type AccountHealth, type WhatsappAccount } from '@batsols/shared';
 import { WhatsAppIcon } from '@/components/brand';
 import { Page } from '@/components/shell/app-shell';
 import { ShareDialog } from '@/components/access/share-dialog';
@@ -177,9 +177,12 @@ function NumberCard({ account: a, health, onConnect, engineOnline }: { account: 
   const owner = a.owner_id ? byId.get(a.owner_id) : undefined;
   const editable = can.admin || (a.owner_id === userId && can.write);
   const st = statusOf(a, engineOnline);
-  const limit = warmupLimit(a.daily_limit, a.warmup_started_at, new Date(now));
+  // Safe mode: the limit the engine applies (warm-up steps for new numbers, never more than SAFE_MAX_DAILY).
+  const limit = safeDailyLimit(a.daily_limit, a.warmup_started_at, a.created_at, new Date(now));
   const sentToday = health?.sent_today ?? 0;
-  const warmDay = a.warmup_started_at ? Math.min(14, Math.floor((now - new Date(a.warmup_started_at).getTime()) / 86400000) + 1) : null;
+  const rampStart = a.warmup_started_at ?? a.created_at;
+  const rampDay = Math.floor((now - new Date(rampStart).getTime()) / 86400000) + 1;
+  const warmDay = rampDay <= 14 ? Math.max(1, rampDay) : null;
   const paused = a.paused_until && new Date(a.paused_until).getTime() > now;
 
   const patch = async (p: Partial<WhatsappAccount>, msg?: string): Promise<void> => {
@@ -374,13 +377,16 @@ function NumberSettings({
           <Field label="Name">
             <Input value={label} onChange={(e) => setLabel(e.target.value)} />
           </Field>
-          <Field label="Daily message limit" hint="Across all campaigns and replies. 30–60 is a safe range for numbers in regular use.">
-            <Input type="number" min={1} max={1000} value={limit} onChange={(e) => setLimit(Number(e.target.value))} />
+          <Field
+            label="Daily message limit"
+            hint={`Across all campaigns. Safe mode never sends more than ${SAFE_MAX_DAILY} a day from one number, and halves this limit if WhatsApp restricts the number. 30–50 is safest.`}
+          >
+            <Input type="number" min={1} max={SAFE_MAX_DAILY} value={limit} onChange={(e) => setLimit(Number(e.target.value))} />
           </Field>
           <div className="divide-y divide-border rounded-xl border border-border px-4">
             <SwitchRow
               label="Warm-up mode"
-              description="Starts at 20% of the limit and ramps to 100% over 14 days. Strongly recommended for new or rarely used numbers."
+              description="Restarts the 14-day ramp: 10 a day, then 20, then 40, then the full limit. New numbers always get it for their first 14 days."
               checked={warmup}
               onCheckedChange={setWarmup}
             />
@@ -400,7 +406,7 @@ function NumberSettings({
               await onSave(
                 {
                   label: label.trim() || account.label,
-                  daily_limit: Math.max(1, Math.min(1000, Math.round(limit))),
+                  daily_limit: Math.max(1, Math.min(SAFE_MAX_DAILY, Math.round(limit))),
                   warmup_started_at: warmup ? (account.warmup_started_at ?? new Date().toISOString()) : null,
                   shared,
                 },
@@ -419,10 +425,10 @@ function NumberSettings({
 
 function SafetyTips() {
   const tips = [
-    { title: 'Warm up new numbers', text: 'Start with 10–20 messages a day and let warm-up mode raise it over two weeks.' },
-    { title: 'Personalise every message', text: 'Use {{business_name}} and spintax like {Hi|Hello} so no two messages are identical.' },
-    { title: 'Avoid links in first messages', text: 'Introduce yourself first; send links once they reply.' },
-    { title: 'Respect opt-outs', text: 'Replies like “stop” are honoured automatically and stop every campaign.' },
+    { title: 'Safe mode is always on', text: `New numbers send 10, then 20, then 40 a day for two weeks; no number sends more than ${SAFE_MAX_DAILY} a day, 2+ minutes apart.` },
+    { title: 'Restrictions pause the number', text: 'If WhatsApp restricts a number it rests for 48 hours and its daily limit is halved; 5 failed sends in a row pause it for 6 hours.' },
+    { title: 'Check numbers sparingly', text: `Looking up unknown numbers is a strong ban signal: at most ${SAFE_CHECKS_PER_DAY} checks per number a day. Campaigns don’t need it.` },
+    { title: 'Start a conversation, not a pitch', text: 'A short personal question with {{business_name}} and {Hi|Hello} variations; no links until they reply; one follow-up at most.' },
   ];
   return (
     <div className="mt-10">

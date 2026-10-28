@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isWithinWindow, localDayKey, nextWindowStart, randomBetween, warmupLimit, zonedTimeToUtc } from '../src/schedule';
+import { isWithinWindow, localDayKey, nextWindowStart, randomBetween, safeDailyLimit, warmupLimit, zonedTimeToUtc } from '../src/schedule';
 
 const KHI = 'Asia/Karachi'; // UTC+5, no DST
 const weekdays = { start: '09:00', end: '19:00', days: [1, 2, 3, 4, 5, 6], timezone: KHI };
@@ -58,5 +58,25 @@ describe('warm-up and delays', () => {
       expect(d).toBeGreaterThanOrEqual(30);
       expect(d).toBeLessThanOrEqual(60);
     }
+  });
+});
+
+describe('safe daily limit', () => {
+  const added = new Date('2026-10-01T09:00:00Z');
+  const on = (day: number) => new Date(added.getTime() + day * 86400000 + 3600_000);
+
+  it('steps a new number up 10 → 20 → 40 over its first two weeks', () => {
+    expect([0, 3, 4, 7, 8, 13, 14, 60].map((d) => safeDailyLimit(60, null, added, on(d)))).toEqual([10, 10, 20, 20, 40, 40, 60, 60]);
+  });
+
+  it('never allows more than 80 a day, and never more than the number\'s own limit', () => {
+    expect(safeDailyLimit(1000, null, added, on(30))).toBe(80);
+    expect(safeDailyLimit(15, null, added, on(5))).toBe(15);
+    expect(safeDailyLimit(5, null, added, on(0))).toBe(5);
+  });
+
+  it('switching warm-up on restarts the ramp for an old number', () => {
+    expect(safeDailyLimit(60, on(20), added, on(21))).toBe(10);
+    expect(safeDailyLimit(60, null, null, on(0))).toBe(60);
   });
 });

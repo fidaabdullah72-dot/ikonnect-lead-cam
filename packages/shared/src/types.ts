@@ -406,7 +406,17 @@ export type WhatsappAccount = {
   paused_until: Timestamp | null;
   disconnect_count: number;
   last_disconnect_at: Timestamp | null;
-  limits: { new_chat_quota?: number; new_chat_used?: number; cycle_end?: string; timelock_until?: string | null; timelock_type?: string; checked_at?: string };
+  limits: {
+    new_chat_quota?: number;
+    new_chat_used?: number;
+    cycle_end?: string;
+    timelock_until?: string | null;
+    timelock_type?: string;
+    checked_at?: string;
+    /** Safe mode: number look-ups used on `checks_day` (UTC date). */
+    checks_day?: string;
+    checks_used?: number;
+  };
   created_at: Timestamp;
   updated_at: Timestamp;
 };

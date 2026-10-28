@@ -63,12 +63,20 @@ import { buildTemplateVars, estimateCampaignDuration, isOptOut, normalizeCampaig
 describe('campaign helpers', () => {
   it('normalizes settings and clamps unsafe values', () => {
     const s = normalizeCampaignSettings({ min_delay_sec: 1, max_delay_sec: 5, batch_size: 0, window: { start: '25:00', days: [0, 9, 3, 3] } }, 'Asia/Karachi');
-    expect(s.min_delay_sec).toBe(10);
-    expect(s.max_delay_sec).toBe(10);
+    expect(s.min_delay_sec).toBe(120);
+    expect(s.max_delay_sec).toBe(180);
     expect(s.batch_size).toBe(1);
     expect(s.window.start).toBe('10:00');
     expect(s.window.days).toEqual([3]);
     expect(s.window.timezone).toBe('Asia/Karachi');
+  });
+
+  it('never lets a campaign send faster than safe mode allows, old settings included', () => {
+    const fast = normalizeCampaignSettings({ min_delay_sec: 25, max_delay_sec: 60, batch_size: 25, batch_pause_min: 5, verify_whatsapp: true }, 'UTC');
+    expect(fast).toMatchObject({ min_delay_sec: 120, max_delay_sec: 180, batch_size: 10, batch_pause_min: 15, verify_whatsapp: true });
+    const slow = normalizeCampaignSettings({ min_delay_sec: 600, max_delay_sec: 620 }, 'UTC');
+    expect(slow).toMatchObject({ min_delay_sec: 600, max_delay_sec: 660 });
+    expect(normalizeCampaignSettings({}, 'UTC')).toMatchObject({ min_delay_sec: 150, max_delay_sec: 300, batch_size: 8, batch_pause_min: 20, verify_whatsapp: false });
   });
 
   it('builds template variables from a lead', () => {

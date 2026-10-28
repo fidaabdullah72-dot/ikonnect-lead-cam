@@ -31,10 +31,10 @@ export function useChecks(state: BuilderState, eligible: number | undefined): Ch
   );
   if (!state.account_ids.length) checks.push({ level: 'error', text: 'Choose at least one WhatsApp number' });
   else if (!chosen.some((a) => a.status === 'connected')) checks.push({ level: 'warning', text: 'None of the chosen numbers is connected right now — the campaign will wait for them' });
-  if (chosen.some((a) => !a.warmup_started_at && a.daily_limit > 60)) checks.push({ level: 'warning', text: 'Some numbers have a high daily limit without warm-up' });
+  if (state.settings.verify_whatsapp) checks.push({ level: 'warning', text: 'Checking numbers before sending raises the ban risk — leave it off unless many numbers are wrong' });
   if (state.steps[0]?.variants.some((v) => /https?:\/\/|www\./i.test(v.body))) checks.push({ level: 'warning', text: 'The first message contains a link — consider sending links after they reply' });
   if (state.steps[0]?.variants.length === 1) checks.push({ level: 'warning', text: 'Tip: add a second variant to A/B test your opener' });
-  if (state.settings.min_delay_sec < 30) checks.push({ level: 'warning', text: 'Gaps under 30 seconds raise the risk of a ban' });
+  if (state.steps.length > 2) checks.push({ level: 'warning', text: 'More than one follow-up makes people report the number — one is usually enough' });
   if (!checks.some((c) => c.level !== 'ok')) checks.push({ level: 'ok', text: 'Everything looks ready' });
   return checks;
 }

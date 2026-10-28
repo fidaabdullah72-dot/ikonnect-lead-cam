@@ -147,6 +147,31 @@ export function warmupLimit(dailyLimit: number, warmupStartedAt: Date | string |
   return Math.round(floor + ((dailyLimit - floor) * elapsedDays) / days);
 }
 
+/** Safe mode: the most one WhatsApp number may send in a day, whatever its own limit says. */
+export const SAFE_MAX_DAILY = 80;
+/** Safe mode: "is this number on WhatsApp?" look-ups per WhatsApp number per day. */
+export const SAFE_CHECKS_PER_DAY = 100;
+/** Safe mode: a new number (or one with warm-up switched on) steps up over its first 14 days. */
+const SAFE_WARMUP_STEPS: Array<[untilDay: number, limit: number]> = [
+  [4, 10],
+  [8, 20],
+  [14, 40],
+];
+
+/**
+ * Messages a number may send today in safe mode. Its first 14 days — counted from when warm-up was switched on,
+ * or else from when it was added — allow 10, then 20, then 40 a day; after that its own limit, never more than
+ * SAFE_MAX_DAILY.
+ */
+export function safeDailyLimit(dailyLimit: number, warmupStartedAt: Date | string | null, addedAt: Date | string | null, now: Date): number {
+  const cap = Math.max(1, Math.min(dailyLimit, SAFE_MAX_DAILY));
+  const start = warmupStartedAt ?? addedAt;
+  if (!start) return cap;
+  const day = Math.floor((now.getTime() - new Date(start).getTime()) / 86400000);
+  for (const [untilDay, limit] of SAFE_WARMUP_STEPS) if (day < untilDay) return Math.min(cap, limit);
+  return cap;
+}
+
 /** Uniform random integer in [min, max]. */
 export function randomBetween(min: number, max: number, rng: () => number = Math.random): number {
   const lo = Math.min(min, max);
