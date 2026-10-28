@@ -47,7 +47,7 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
     queryFn: async () => {
       const { data, error, count } = await getSupabase()
         .rpc('filtered_leads', { p_workspace: workspace.id, p_filters: effective }, { count: 'exact' })
-        .select('id, business_name, phone, city, category, score')
+        .select('id, business_name, phone, city, category, score, created_at')
         .order('score', { ascending: false })
         .order('created_at', { ascending: false })
         .order('id')

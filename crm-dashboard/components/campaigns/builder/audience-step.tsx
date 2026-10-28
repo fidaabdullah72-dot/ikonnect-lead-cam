@@ -195,7 +195,7 @@ function AudiencePreview({ audience, skipLandlines, excludeCampaignId, total }: 
     queryFn: async () => {
       const { data, error } = await getSupabase()
         .rpc('filtered_leads', { p_workspace: workspace.id, p_filters: filters })
-        .select('id, business_name, phone, city, country, category, website_domain, score')
+        .select('id, business_name, phone, city, country, category, website_domain, score, created_at')
         .order('score', { ascending: false })
         .order('created_at', { ascending: false })
         .order('id')

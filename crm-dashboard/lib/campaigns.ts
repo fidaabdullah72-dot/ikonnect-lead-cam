@@ -142,7 +142,8 @@ export async function pickTopLeadIds(workspaceId: string, filters: LeadFilters, 
     const to = Math.min(limit, from + page) - 1;
     const { data, error } = await getSupabase()
       .rpc('filtered_leads', { p_workspace: workspaceId, p_filters: filters })
-      .select('id')
+      // The API can only sort by columns it returns.
+      .select('id, score, created_at')
       .order('score', { ascending: false })
       .order('created_at', { ascending: false })
       .order('id')
