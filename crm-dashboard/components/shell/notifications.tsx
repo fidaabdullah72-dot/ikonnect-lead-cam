@@ -19,6 +19,7 @@ const ICONS: Record<string, React.ElementType> = {
   campaign_completed: Send,
   campaign_paused: Send,
   lead_assigned: UserPlus,
+  assigned: UserPlus,
   task_assigned: ListTodo,
   scrape_completed: MapPin,
   scrape_failed: MapPin,

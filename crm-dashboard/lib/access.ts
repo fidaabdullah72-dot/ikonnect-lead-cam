@@ -56,6 +56,23 @@ export function useAllGrants() {
   });
 }
 
+/** Grants per resource of one type, e.g. who each campaign is assigned to (admins: everyone; members: their own). */
+export function useAssignments(type: ResourceType) {
+  const all = useAllGrants();
+  const { userId } = useWorkspace();
+  const { teams, memberships } = useTeams();
+  const byResource = React.useMemo(() => {
+    const map = new Map<string, ResourceAccess[]>();
+    for (const g of all.data ?? []) if (g.resource_type === type) map.set(g.resource_id, [...(map.get(g.resource_id) ?? []), g]);
+    return map;
+  }, [all.data, type]);
+  const myTeams = React.useMemo(() => new Set(memberships.filter((m) => m.user_id === userId).map((m) => m.team_id)), [memberships, userId]);
+  /** Assigned to me directly or through one of my teams. */
+  const isMine = React.useCallback((id: string) => (byResource.get(id) ?? []).some((g) => g.user_id === userId || (!!g.team_id && myTeams.has(g.team_id))), [byResource, userId, myTeams]);
+  const teamName = (id: string) => teams.find((t) => t.id === id)?.name ?? 'Team';
+  return { byResource, isMine, teamName };
+}
+
 export function useInvalidateGrants() {
   const qc = useQueryClient();
   const { workspace } = useWorkspace();

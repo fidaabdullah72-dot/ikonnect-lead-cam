@@ -45,8 +45,10 @@ export function ShareDialog({
   const { teams } = useTeams();
   const grants = useGrants(type, open ? resourceId : null);
   const invalidate = useInvalidateGrants();
+  // Campaigns are assigned: the person runs it (manage) and sees it in their own space.
+  const assign = type === 'campaign';
   const [target, setTarget] = React.useState('');
-  const [access, setAccess] = React.useState<'view' | 'manage'>('view');
+  const [access, setAccess] = React.useState<'view' | 'manage'>(assign ? 'manage' : 'view');
   const [busy, setBusy] = React.useState(false);
   const help = ACCESS_HELP[type];
 
@@ -54,12 +56,15 @@ export function ShareDialog({
   const options = [
     ...teams.filter((t) => !granted.has(t.id)).map((t) => ({ value: `team:${t.id}`, label: `Team · ${t.name}` })),
     ...members
-      .filter((m) => m.user_id !== userId && m.role !== 'owner' && m.role !== 'admin' && !granted.has(m.user_id))
+      // Owners and admins see everything already; a campaign can still be assigned to them.
+      .filter((m) => m.user_id !== userId && (assign || (m.role !== 'owner' && m.role !== 'admin')) && !granted.has(m.user_id))
       .map((m) => ({ value: `user:${m.user_id}`, label: m.profile.full_name || m.profile.email })),
   ];
 
-  async function add() {
-    if (!target) return;
+  /** Saves the chosen teammate/team; false if it failed. */
+  async function add(): Promise<boolean> {
+    if (!target) return true;
+    const label = options.find((o) => o.value === target)?.label ?? 'them';
     setBusy(true);
     const [kind, id] = target.split(':') as ['team' | 'user', string];
     const { error } = await getSupabase()
@@ -73,10 +78,15 @@ export function ShareDialog({
         granted_by: userId,
       });
     setBusy(false);
-    if (error) return toast.error(errorMessage(error));
+    if (error) {
+      toast.error(errorMessage(error));
+      return false;
+    }
+    toast.success(`${assign ? 'Assigned to' : 'Shared with'} ${label.replace(/^Team · /, 'team ')} — they’ve been notified`);
     setTarget('');
     invalidate();
     void grants.refetch();
+    return true;
   }
 
   async function revoke(id: string) {
@@ -88,7 +98,7 @@ export function ShareDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent size="md" title={`Share ${RESOURCE_LABELS[type]}`} description={resourceName}>
+      <DialogContent size="md" title={assign ? 'Assign campaign' : `Share ${RESOURCE_LABELS[type]}`} description={resourceName}>
         <DialogBody className="space-y-4">
           {help.note && <Callout tone="info">{help.note}</Callout>}
           <div className="flex flex-wrap gap-2">
@@ -105,7 +115,7 @@ export function ShareDialog({
               <option value="manage">Can manage</option>
             </NativeSelect>
             <Button variant="primary" onClick={add} disabled={!target} loading={busy}>
-              <Share2 /> Share
+              <Share2 /> {assign ? 'Assign' : 'Share'}
             </Button>
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs text-muted">
@@ -124,7 +134,7 @@ export function ShareDialog({
           </div>
 
           <div>
-            <div className="mb-2 text-[13px] font-semibold">People with access</div>
+            <div className="mb-2 text-[13px] font-semibold">{assign ? 'Assigned to' : 'People with access'}</div>
             <ul className="divide-y divide-border rounded-xl border border-border">
               <li className="flex items-center gap-3 px-3 py-2.5 text-[13px] text-muted">
                 <Users className="size-4" /> Owners and admins always have access
@@ -157,8 +167,15 @@ export function ShareDialog({
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button variant="primary" onClick={() => onOpenChange(false)}>
-            Done
+          {/* A teammate picked but not added yet is saved on Done, not lost. */}
+          <Button
+            variant="primary"
+            loading={busy}
+            onClick={async () => {
+              if (await add()) onOpenChange(false);
+            }}
+          >
+            {target ? (assign ? 'Assign & close' : 'Share & close') : 'Done'}
           </Button>
         </DialogFooter>
       </DialogContent>

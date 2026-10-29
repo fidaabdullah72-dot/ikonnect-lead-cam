@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { Activity, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, ListChecks, MessageCircle, Pause, Pencil, Play, Plus, Search, Send, Split, UserRound, XCircle, AlertCircle, Info } from 'lucide-react';
+import { Activity, ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Clock, Download, ListChecks, MessageCircle, Pause, Pencil, Play, Plus, Search, Send, Split, UserPlus, UserRound, XCircle, AlertCircle, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import Papa from 'papaparse';
 import { formatPhone, nextWindowStart, normalizeCampaignSettings, type CampaignEvent } from '@batsols/shared';
@@ -20,6 +20,8 @@ import { Callout, EmptyState, Skeleton } from '@/components/ui/feedback';
 import { Input } from '@/components/ui/input';
 import { StatCard, Table, Td, Th, Tr } from '@/components/ui/layout';
 import { PageSpinner } from '@/components/ui/spinner';
+import { ShareDialog } from '@/components/access/share-dialog';
+import { useAssignments } from '@/lib/access';
 import { CampaignMenu, useCampaignActions } from './campaign-actions';
 import { AddLeadsDialog } from './add-leads-dialog';
 import { CAMPAIGN_STATUS, useCampaign, useCampaignEvents, useCampaignSenders, useRecipients, useVariantStats } from '@/lib/campaigns';
@@ -81,7 +83,9 @@ function Inner({ c, steps, stats, members, accounts, leadId, setLeadId, addOpen,
   addOpen: boolean;
   setAddOpen: (v: boolean) => void;
 }) {
-  const { workspace } = useWorkspace();
+  const { workspace, userId, can } = useWorkspace();
+  const assignments = useAssignments('campaign');
+  const [assignOpen, setAssignOpen] = React.useState(false);
   const actions = useCampaignActions(c);
   const settings = normalizeCampaignSettings(c.settings, workspace.timezone);
   const st = CAMPAIGN_STATUS[c.status];
@@ -90,6 +94,9 @@ function Inner({ c, steps, stats, members, accounts, leadId, setLeadId, addOpen,
   const remaining = (stats?.pending ?? 0) + (stats?.waiting ?? 0);
   const done = total - remaining;
   const owner = c.created_by ? members.get(c.created_by) : undefined;
+  // Only the creator or an admin can assign (the database enforces it too).
+  const canAssign = can.write && (can.admin || c.created_by === userId);
+  const assigned = assignments.byResource.get(c.id) ?? [];
   const note =
     c.status === 'running' && c.paused_reason === 'Outside sending hours'
       ? `Outside sending hours — resumes ${fullDate(nextWindowStart(new Date(), settings.window))}`
@@ -141,6 +148,14 @@ function Inner({ c, steps, stats, members, accounts, leadId, setLeadId, addOpen,
                 </span>
               )}
               <span>Created {timeAgo(c.created_at)}</span>
+              {assigned.length > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  → Assigned to{' '}
+                  <b className="font-medium text-foreground">
+                    {assigned.map((g) => (g.team_id ? `${assignments.teamName(g.team_id)} team` : g.user_id === userId ? 'you' : (members.get(g.user_id!)?.profile.full_name ?? 'a member'))).join(', ')}
+                  </b>
+                </span>
+              )}
               {c.started_at && <span>· Started {fullDate(c.started_at)}</span>}
               {c.status === 'scheduled' && c.scheduled_at && <span>· Starts {fullDate(c.scheduled_at)}</span>}
               <AudienceLists ids={[...(c.audience?.list_ids ?? []), ...(c.audience?.filters?.list_ids ?? [])]} />
@@ -173,9 +188,15 @@ function Inner({ c, steps, stats, members, accounts, leadId, setLeadId, addOpen,
           <Button variant="ghost" onClick={exportResults}>
             <Download /> Export
           </Button>
-          <CampaignMenu campaign={c} />
+          {canAssign && (
+            <Button variant="secondary" onClick={() => setAssignOpen(true)}>
+              <UserPlus /> {assigned.length ? 'Assigned' : 'Assign'}
+            </Button>
+          )}
+          <CampaignMenu campaign={c} onShare={canAssign ? () => setAssignOpen(true) : undefined} />
         </div>
       </div>
+      <ShareDialog open={assignOpen} onOpenChange={setAssignOpen} type="campaign" resourceId={c.id} resourceName={c.name} />
 
       {note && (
         <Callout tone={c.status === 'paused' ? 'warning' : 'info'} className="mb-5">

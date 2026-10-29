@@ -14,6 +14,7 @@ import { EmptyState, Skeleton } from '@/components/ui/feedback';
 import { PageHeader, Table, Td, Th, Tr } from '@/components/ui/layout';
 import { CampaignMenu } from './campaign-actions';
 import { CAMPAIGN_STATUS, useCampaigns, type CampaignWithStats } from '@/lib/campaigns';
+import { useAssignments } from '@/lib/access';
 import { useAccounts, useMembers } from '@/lib/queries';
 import { useWorkspace } from '@/lib/workspace';
 import { formatNumber, formatPercent, timeAgo } from '@/lib/utils';
@@ -26,6 +27,7 @@ export function CampaignsView() {
   const { data: campaigns = [], isLoading } = useCampaigns();
   const { byId: members } = useMembers();
   const { byId: accounts } = useAccounts();
+  const assignments = useAssignments('campaign');
   const [tab, setTab] = React.useState<Tab>('all');
   const [mine, setMine] = React.useState(false);
 
@@ -34,7 +36,7 @@ export function CampaignsView() {
       (tab === 'active' && ['running', 'scheduled', 'paused'].includes(c.status)) ||
       (tab === 'draft' && c.status === 'draft') ||
       (tab === 'done' && ['completed', 'cancelled'].includes(c.status))) &&
-    (!mine || c.created_by === userId);
+    (!mine || c.created_by === userId || assignments.isMine(c.id));
   const list = campaigns.filter(matches);
   const count = (t: Tab) => campaigns.filter((c) => (t === 'all' ? true : t === 'active' ? ['running', 'scheduled', 'paused'].includes(c.status) : t === 'draft' ? c.status === 'draft' : ['completed', 'cancelled'].includes(c.status))).length;
 
@@ -68,7 +70,7 @@ export function CampaignsView() {
           onChange={(v) => setMine(v === 'mine')}
           options={[
             { value: 'team', label: 'Team' },
-            { value: 'mine', label: 'Mine' },
+            { value: 'mine', label: 'Mine & assigned' },
           ]}
         />
       </div>
@@ -157,6 +159,21 @@ export function CampaignsView() {
                             <Avatar name={owner.profile.full_name || owner.profile.email} src={owner.profile.avatar_url} size="xs" />
                             <span className="truncate">{owner.profile.full_name.split(' ')[0]}</span>
                           </span>
+                        )}
+                        {(assignments.byResource.get(c.id)?.length ?? 0) > 0 && (
+                          <div className="mt-1 truncate text-xs text-muted">
+                            {c.created_by !== userId && assignments.isMine(c.id) ? (
+                              <span className="font-medium text-primary">Assigned to you</span>
+                            ) : (
+                              <>
+                                →{' '}
+                                {assignments.byResource
+                                  .get(c.id)!
+                                  .map((g) => (g.team_id ? assignments.teamName(g.team_id) : (members.get(g.user_id!)?.profile.full_name.split(' ')[0] ?? 'Member')))
+                                  .join(', ')}
+                              </>
+                            )}
+                          </div>
                         )}
                       </Td>
                       <Td onClick={(e) => e.stopPropagation()}>
