@@ -10,8 +10,6 @@ let ws: string;
 let campaign: string;
 let team: string;
 
-const notes = (uid: string) => rows<{ type: string; title: string; body: string; link: string }>(db, `select type, title, body, link from public.notifications where user_id = $1 and type = 'assigned'`, [uid]);
-
 beforeAll(async () => {
   db = await createDb();
   owner = await createUser(db, 'owner@agency.test', 'Ayesha Owner');
@@ -27,20 +25,13 @@ beforeAll(async () => {
 }, 60_000);
 
 describe('assigning a campaign', () => {
-  it('the assigned member sees the running campaign and gets a notification', async () => {
+  it('the assigned member sees the running campaign and its numbers', async () => {
     expect(await asUser(db, fizan, (tx) => rows(tx, `select 1 from public.campaigns where id = $1`, [campaign]))).toHaveLength(0);
     await asUser(db, owner, (tx) =>
       tx.query(`insert into public.resource_access (workspace_id, resource_type, resource_id, user_id, access, granted_by) values ($1, 'campaign', $2, $3, 'manage', $4)`, [ws, campaign, fizan, owner]),
     );
     expect(await asUser(db, fizan, (tx) => rows(tx, `select 1 from public.campaigns where id = $1`, [campaign]))).toHaveLength(1);
     expect(await asUser(db, fizan, (tx) => rows(tx, `select 1 from public.campaign_stats where campaign_id = $1`, [campaign]))).toHaveLength(1);
-    const [n] = await notes(fizan);
-    expect(n).toEqual({
-      type: 'assigned',
-      title: 'Campaign assigned to you',
-      body: 'Dentists Lahore · by Ayesha Owner · you can run and edit it',
-      link: `/campaigns/${campaign}`,
-    });
   });
 
   it('the member can read their own assignment; the owner sees who it is assigned to', async () => {
@@ -48,13 +39,11 @@ describe('assigning a campaign', () => {
     expect(await asUser(db, owner, (tx) => rows(tx, `select user_id from public.resource_access where resource_id = $1`, [campaign]))).toEqual([{ user_id: fizan }]);
   });
 
-  it('assigning to a team notifies its members, but not the person who assigned it', async () => {
+  it('assigning to a team shows it to the team, and to nobody else', async () => {
     await asUser(db, owner, (tx) =>
       tx.query(`insert into public.resource_access (workspace_id, resource_type, resource_id, team_id, access, granted_by) values ($1, 'campaign', $2, $3, 'view', $4)`, [ws, campaign, team, owner]),
     );
-    expect((await notes(sara)).map((n) => n.body)).toEqual(['Dentists Lahore · by Ayesha Owner · you can follow its progress']);
-    expect(await notes(owner)).toHaveLength(0);
-    expect(await notes(other)).toHaveLength(0);
+    expect(await asUser(db, sara, (tx) => rows(tx, `select 1 from public.campaigns where id = $1`, [campaign]))).toHaveLength(1);
     expect(await asUser(db, other, (tx) => rows(tx, `select 1 from public.campaigns where id = $1`, [campaign]))).toHaveLength(0);
   });
 

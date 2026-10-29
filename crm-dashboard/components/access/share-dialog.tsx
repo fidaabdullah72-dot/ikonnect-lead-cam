@@ -82,7 +82,7 @@ export function ShareDialog({
       toast.error(errorMessage(error));
       return false;
     }
-    toast.success(`${assign ? 'Assigned to' : 'Shared with'} ${label.replace(/^Team · /, 'team ')} — they’ve been notified`);
+    toast.success(`${assign ? 'Assigned to' : 'Shared with'} ${label.replace(/^Team · /, 'team ')}`);
     setTarget('');
     invalidate();
     void grants.refetch();
