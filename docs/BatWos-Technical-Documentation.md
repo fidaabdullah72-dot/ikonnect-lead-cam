@@ -299,3 +299,16 @@ folder has its own `deploy/oracle/.env` with its own keys.
   look-ups, 48-hour rest and halved limit after a restriction, auto-pause after failures, human-like presence and read
   receipts.
 - **How many leads**: send a campaign to only the best-scored N matching leads (100, 200, 300, … or any number).
+
+## 13. Release notes — 6 Nov 2026
+
+- **No double outreach across teammates**: members can't see each other's campaigns, so their audiences used to
+  overlap. Picking leads now checks every campaign (server route `/api/campaigns/busy-leads`, service role), and the
+  engine refuses at send time: a lead belongs to the earliest active campaign it is queued in, and no campaign
+  messages a lead another campaign messaged in the last 30 days.
+- **Reply notifications** go to the number's owner and the campaign creators as well as the lead's owner; desktop
+  pop-ups when the tab is in the background (turned on from the bell).
+- **Numbers no longer drop every ~50 minutes**: WhatsApp Status updates were refused by the library and WhatsApp
+  closed the connection over a refused media status; they are now received and skipped.
+- **Clear linking errors**: an expired QR/pairing code, or WhatsApp removing the device right after linking
+  (restricted number or too many linked devices), are reported as such.

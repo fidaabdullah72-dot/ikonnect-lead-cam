@@ -2,7 +2,7 @@
  * Incoming WhatsApp traffic: replies, messages the user typed on their phone,
  * and delivery/read receipts.
  */
-import { downloadMediaMessage, isJidGroup, proto, toNumber, type WAMessage, type WAMessageKey, type WAMessageUpdate } from 'baileys';
+import { downloadMediaMessage, isJidGroup, isJidStatusBroadcast, proto, toNumber, type WAMessage, type WAMessageKey, type WAMessageUpdate } from 'baileys';
 import { isOptOut, normalizePhone, type Lead, type RecipientStatus } from '@batsols/shared';
 import { db } from '../db';
 import { baileysLogger, log } from '../log';
@@ -103,7 +103,7 @@ export async function handleUpsert(session: WaSession, upsert: { messages: WAMes
 
 async function handleOne(session: WaSession, msg: WAMessage, type: string) {
   const key = msg.key;
-  if (!key.id || !key.remoteJid || isJidGroup(key.remoteJid)) return;
+  if (!key.id || !key.remoteJid || isJidGroup(key.remoteJid) || isJidStatusBroadcast(key.remoteJid)) return;
   const fromMe = Boolean(key.fromMe);
   // Our own sends are recorded when we send them; skip their echoes. The echo can arrive before
   // the send is saved, so the session's own list is checked first, then the database.
@@ -246,6 +246,7 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
     last_sent_at: string | null;
     campaigns: { settings: { stop_on_reply?: boolean }; created_by: string | null };
   };
+  const campaignOwners = new Set<string>();
   for (const r of (active ?? []) as unknown as ActiveRecipient[]) {
     if (!optOut) {
       if (r.steps_sent === 0 || (r.account_id && r.account_id !== session.accountId)) continue;
@@ -253,6 +254,7 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
       const firstAt = first?.created_at ?? r.last_sent_at;
       if (firstAt && Date.parse(at) < Date.parse(firstAt) - CLOCK_SKEW_MS) continue;
     }
+    if (r.campaigns.created_by) campaignOwners.add(r.campaigns.created_by);
     const stop = optOut || r.campaigns.settings?.stop_on_reply !== false || r.status === 'completed';
     const next: RecipientStatus = optOut ? 'cancelled' : stop ? 'replied' : (r.status as RecipientStatus);
     await db.from('campaign_recipients').update({ status: next, replied_at: at }).eq('id', r.id);
@@ -269,7 +271,9 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
   if (optOut) await logActivity(workspaceId, lead.id, 'opted_out', { via: 'reply', text: content.text.slice(0, 200) });
   else if (firstReply) await logActivity(workspaceId, lead.id, 'replied', { account_id: session.accountId });
 
-  // Notify the lead's owner (or the number's owner), at most once per 10 minutes per chat.
+  // Notify whoever works this chat — the number's owner, the creators of the campaigns that messaged the lead, and
+  // the lead's owner — at most once per 10 minutes per chat. (Leads are often owned by whoever imported them, so
+  // notifying only the lead's owner left the teammate who runs the number in the dark.)
   const { count: recent } = await db
     .from('messages')
     .select('id', { count: 'exact', head: true })
@@ -277,7 +281,7 @@ async function handleOne(session: WaSession, msg: WAMessage, type: string) {
     .eq('direction', 'in')
     .gte('created_at', new Date(Date.now() - 10 * 60_000).toISOString());
   if ((recent ?? 0) <= 1) {
-    await notify(workspaceId, [lead.owner_id ?? session.account.owner_id], {
+    await notify(workspaceId, [session.account.owner_id, ...campaignOwners, lead.owner_id], {
       type: 'reply',
       title: `${lead.business_name} replied`,
       body: content.text.slice(0, 160) || previewOf(content),

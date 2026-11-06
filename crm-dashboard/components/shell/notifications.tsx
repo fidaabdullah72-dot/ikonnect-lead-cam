@@ -27,18 +27,54 @@ const ICONS: Record<string, React.ElementType> = {
   whatsapp_connected: Smartphone,
 };
 
+/** Desktop pop-ups need the browser's permission, asked once from a click. */
+const canDesktop = () => typeof window !== 'undefined' && 'Notification' in window;
+
+const noSubscribe = () => () => undefined;
+
+function desktopAlert(n: Notification) {
+  if (!canDesktop() || window.Notification.permission !== 'granted' || !document.hidden) return;
+  try {
+    const alert = new window.Notification(n.title, { body: n.body ?? undefined, tag: n.id, icon: '/icon.svg' });
+    alert.onclick = () => {
+      window.focus();
+      if (n.link) window.location.href = n.link;
+      alert.close();
+    };
+  } catch {
+    /* some browsers only allow pop-ups from a service worker */
+  }
+}
+
 export function NotificationsBell() {
   const { workspace, userId } = useWorkspace();
   const qc = useQueryClient();
   const key = qk.notifications(workspace.id, userId);
   const [open, setOpen] = React.useState(false);
+  // Read on the client only (the server can't know it); re-read after asking.
+  const [, reread] = React.useReducer((x: number) => x + 1, 0);
+  const permission = React.useSyncExternalStore<NotificationPermission | 'unsupported'>(
+    noSubscribe,
+    () => (canDesktop() ? window.Notification.permission : 'unsupported'),
+    () => 'unsupported',
+  );
 
   useRealtime('notifications', `user_id=eq.${userId}`, [key], (p) => {
     if (p.eventType === 'INSERT' && p.new.workspace_id === workspace.id) {
       const n = p.new as unknown as Notification;
       toast(n.title, { description: n.body ?? undefined, action: n.link ? { label: 'Open', onClick: () => (window.location.href = n.link!) } : undefined });
+      // In another tab or window: a desktop pop-up, so replies aren't missed.
+      desktopAlert(n);
     }
   });
+
+  async function enableDesktop() {
+    if (!canDesktop()) return;
+    const result = await window.Notification.requestPermission();
+    reread();
+    if (result === 'granted') toast.success('Desktop alerts on — replies pop up even when this tab is in the background');
+    else toast.error('The browser blocked alerts. Allow notifications for this site in the browser settings.');
+  }
 
   const { data = [] } = useQuery({
     queryKey: key,
@@ -87,6 +123,14 @@ export function NotificationsBell() {
             </Button>
           )}
         </div>
+        {permission === 'default' && (
+          <button type="button" onClick={enableDesktop} className="flex w-full items-center gap-2 border-b border-border bg-primary-soft px-4 py-2.5 text-left text-[12.5px] text-primary hover:bg-primary-soft/70">
+            <Bell className="size-3.5 shrink-0" /> Turn on desktop alerts so you never miss a reply
+          </button>
+        )}
+        {permission === 'denied' && (
+          <div className="border-b border-border px-4 py-2.5 text-[12px] text-muted">Desktop alerts are blocked — allow notifications for this site in the browser settings.</div>
+        )}
         <div className="max-h-[420px] overflow-y-auto">
           {data.length === 0 ? (
             <EmptyState compact icon={<Bell />} title="You’re all caught up" description="Replies, finished campaigns and assignments show up here." />

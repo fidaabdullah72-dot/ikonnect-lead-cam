@@ -130,16 +130,35 @@ export const CAMPAIGN_STATUS: Record<Campaign['status'], { label: string; tone: 
 /** Quick picks for "how many leads" boxes. */
 export const LEAD_LIMIT_PRESETS = [100, 200, 300, 500, 1000];
 
+/** Of `leadIds`, those already taken by another campaign (any member's) — see /api/campaigns/busy-leads. */
+async function busyLeads(workspaceId: string, leadIds: string[], campaignId?: string): Promise<Set<string>> {
+  if (!leadIds.length) return new Set();
+  const res = await fetch('/api/campaigns/busy-leads', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ workspace_id: workspaceId, lead_ids: leadIds, campaign_id: campaignId }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { busy?: string[]; error?: string };
+  if (!res.ok) throw new Error(body.error ?? 'Could not check which leads are already in other campaigns');
+  return new Set(body.busy ?? []);
+}
+
 /**
- * Ids of the first `limit` leads matching `filters`, best-scored first (newest first on a tie) — the leads a
- * "send to N leads" campaign gets. Read in pages because the API returns at most 1,000 rows per request.
+ * Ids of the first `limit` leads matching `filters` (Infinity = all), best-scored first (newest first on a tie) —
+ * the leads a campaign gets. With `skipBusy`, leads already taken by another campaign — including teammates'
+ * campaigns this user can't see — are left out, so "200 leads" means 200 that nobody else is messaging.
+ * Read in pages because the API returns at most 1,000 rows per request.
  */
-export async function pickTopLeadIds(workspaceId: string, filters: LeadFilters, limit: number): Promise<string[]> {
+export async function pickTopLeadIds(
+  workspaceId: string,
+  filters: LeadFilters,
+  limit: number,
+  opts: { skipBusy?: boolean; campaignId?: string } = {},
+): Promise<string[]> {
   const page = 1000;
   const ids: string[] = [];
-  while (ids.length < limit) {
-    const from = ids.length;
-    const to = Math.min(limit, from + page) - 1;
+  for (let from = 0; ids.length < limit; from += page) {
+    const to = from + page - 1;
     const { data, error } = await getSupabase()
       .rpc('filtered_leads', { p_workspace: workspaceId, p_filters: filters })
       // The API can only sort by columns it returns.
@@ -149,8 +168,10 @@ export async function pickTopLeadIds(workspaceId: string, filters: LeadFilters, 
       .order('id')
       .range(from, to);
     if (error) throw error;
-    ids.push(...(data ?? []).map((r) => r.id));
-    if ((data?.length ?? 0) < to - from + 1) break;
+    const batch = (data ?? []).map((r) => r.id);
+    const busy = opts.skipBusy ? await busyLeads(workspaceId, batch, opts.campaignId) : new Set<string>();
+    ids.push(...batch.filter((id) => !busy.has(id)).slice(0, limit - ids.length));
+    if (batch.length < page) break;
   }
   return ids;
 }

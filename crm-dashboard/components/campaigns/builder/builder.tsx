@@ -182,7 +182,9 @@ export function CampaignBuilder({ campaignId }: { campaignId?: string }) {
         const scoped = { ...filters, exclude_campaign_id: id! };
         // "How many leads": only the best-scored N of the matching leads.
         const limit = audienceLimit(state.audience);
-        const picked = limit ? await pickTopLeadIds(workspace.id, scoped, limit) : null;
+        // "Skip leads already in another active campaign" also covers teammates' campaigns this user can't see.
+        const skipBusy = state.audience.skipActive;
+        const picked = limit || skipBusy ? await pickTopLeadIds(workspace.id, scoped, limit ?? Infinity, { skipBusy, campaignId: id! }) : null;
         const { error: recErr } = await sb.rpc('campaign_add_recipients', {
           p_campaign: id!,
           p_filters: picked ? { ...scoped, ids: picked.length ? picked : [NO_LEAD] } : scoped,

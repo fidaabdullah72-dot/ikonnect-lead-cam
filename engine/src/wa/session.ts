@@ -97,6 +97,8 @@ export class WaSession {
   private attempts = 0;
   private qrRounds = 0;
   private conflicts = 0;
+  /** When this session last opened; a logout soon after linking is reported differently. */
+  private openedAt: number | null = null;
   private pairingRequested = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private phaseSince = Date.now();
@@ -212,7 +214,10 @@ export class WaSession {
         defaultQueryTimeoutMs: 60_000,
         retryRequestDelayMs: 500,
         generateHighQualityLinkPreview: false,
-        shouldIgnoreJid: (jid) => Boolean(isJidBroadcast(jid) || isJidNewsletter(jid) || isJidStatusBroadcast(jid)),
+        // Status updates are NOT ignored here: Baileys answers ignored messages with a NACK, and WhatsApp drops the
+        // whole connection over a NACK for a media status — then resends it on reconnect, every ~50 minutes.
+        // They are received normally and skipped by the inbound handler.
+        shouldIgnoreJid: (jid) => Boolean(!isJidStatusBroadcast(jid) && (isJidBroadcast(jid) || isJidNewsletter(jid))),
         getMessage: (key) => this.hooks.getMessage(this, key),
       });
       this.sock = sock;
@@ -285,6 +290,7 @@ export class WaSession {
 
     if (connection === 'open') {
       const wasDown = this.downSince;
+      this.openedAt = Date.now();
       this.setPhase('open');
       this.attempts = 0;
       this.qrRounds = 0;
@@ -341,10 +347,19 @@ export class WaSession {
 
       if (code === DisconnectReason.loggedOut || code === DisconnectReason.multideviceMismatch) {
         await clearSession(this.accountId);
+        // Never opened: the QR/pairing code wasn't completed. Removed within minutes of linking: WhatsApp refuses
+        // linked devices for this number (a restricted number can't link devices for about a day), or the phone
+        // already has the most linked devices.
+        const neverOpened = this.openedAt === null;
+        const justLinked = this.openedAt !== null && Date.now() - this.openedAt < 30 * 60_000;
         await this.halt({
           status: 'logged_out',
           desired_state: 'logged_out',
-          last_error: 'This device was logged out from the phone (or WhatsApp unlinked it). Scan a new QR code to reconnect.',
+          last_error: neverOpened
+            ? 'Linking was not completed in time (the QR or pairing code expired). Click Connect and enter the new code on the phone within a minute.'
+            : justLinked
+              ? 'WhatsApp removed this device a few minutes after linking. The number is probably restricted (it can’t link devices for about 24 hours) or the phone already has 4 linked devices — check WhatsApp → Linked devices on the phone, wait, then connect again.'
+              : 'This device was logged out from the phone (or WhatsApp unlinked it). Scan a new QR code to reconnect.',
         });
         await notify(this.account.workspace_id, [this.account.owner_id, ...(await adminsOf(this.account.workspace_id))], {
           type: 'whatsapp_disconnected',

@@ -46,6 +46,8 @@ const MAX_ATTEMPTS = 3;
 /** Safe mode: how long a number rests after WhatsApp's rate limit or a run of failed sends. */
 const RATE_LIMIT_PAUSE_MS = 6 * 3600_000;
 const FAIL_STREAK_PAUSE = 5;
+/** No double outreach: a lead another campaign messaged within this time is skipped. */
+const RECENT_OUTREACH_MS = 30 * 86400_000;
 
 function isRateLimit(e: unknown) {
   const err = e as { output?: { statusCode?: number }; message?: string };
@@ -349,6 +351,30 @@ export class CampaignRunner {
       .eq('id', r.id);
   }
 
+  /**
+   * No double outreach, whoever created the campaigns (members can't see each other's campaigns, so their
+   * audiences can overlap): a lead belongs to the earliest active campaign it is queued in, and no campaign
+   * messages a lead that another campaign messaged in the last 30 days.
+   */
+  private async takenElsewhere(c: Campaign, leadId: string): Promise<string | null> {
+    const { data, error } = await db
+      .from('campaign_recipients')
+      .select('campaign_id, status, steps_sent, last_sent_at, campaigns!inner(name, status, created_at)')
+      .eq('lead_id', leadId)
+      .neq('campaign_id', c.id);
+    if (error) throw new Error(`overlap check failed: ${error.message}`);
+    const since = Date.now() - RECENT_OUTREACH_MS;
+    const mine = Date.parse(c.created_at);
+    type Other = { campaign_id: string; status: string; steps_sent: number; last_sent_at: string | null; campaigns: { name: string; status: string; created_at: string } };
+    for (const o of (data ?? []) as unknown as Other[]) {
+      if (o.steps_sent > 0 && o.last_sent_at && Date.parse(o.last_sent_at) > since) return `Already messaged by “${o.campaigns.name}”`;
+      const queued = ['running', 'paused', 'scheduled'].includes(o.campaigns.status) && ['pending', 'waiting', 'sending'].includes(o.status);
+      const theirs = Date.parse(o.campaigns.created_at);
+      if (queued && (theirs < mine || (theirs === mine && o.campaign_id < c.id))) return `Already in campaign “${o.campaigns.name}”`;
+    }
+    return null;
+  }
+
   private async finish(r: CampaignRecipient, status: 'skipped' | 'failed' | 'completed' | 'replied', error: string | null) {
     await db.from('campaign_recipients').update({ status, error }).eq('id', r.id);
   }
@@ -368,6 +394,10 @@ export class CampaignRunner {
     if (lead.opted_out) return skip('Opted out');
     if (!lead.phone) return skip('No phone number');
     if (ctx.settings.skip_landlines && lead.phone_type === 'landline') return skip('Landline number');
+    if (r.steps_sent === 0) {
+      const taken = await this.takenElsewhere(c, lead.id);
+      if (taken) return skip(taken);
+    }
     if (ctx.settings.stop_on_reply && r.steps_sent > 0 && lead.last_replied_at && r.last_sent_at && Date.parse(lead.last_replied_at) > Date.parse(r.last_sent_at)) {
       await this.finish(r, 'replied', null);
       return;

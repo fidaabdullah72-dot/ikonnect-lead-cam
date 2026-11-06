@@ -64,11 +64,9 @@ export function AddLeadsDialog({ open, onOpenChange, campaignId }: { open: boole
     setBusy(true);
     let filters = effective;
     try {
-      // "How many leads": only the best-scored N of the matching leads.
-      if (cap) {
-        const ids = await pickTopLeadIds(workspace.id, effective, cap);
-        filters = { ...effective, ids: ids.length ? ids : [NO_LEAD] };
-      }
+      // "How many leads": only the best-scored N; never leads another campaign (anyone's) already has.
+      const ids = await pickTopLeadIds(workspace.id, effective, cap ?? Infinity, { skipBusy: true, campaignId });
+      filters = { ...effective, ids: ids.length ? ids : [NO_LEAD] };
     } catch (e) {
       setBusy(false);
       return toast.error(errorMessage(e));
