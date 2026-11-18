@@ -153,7 +153,7 @@ or get reported. The engine enforces these rules for every campaign, old ones in
 | "Is this number on WhatsApp?" look-ups | off by default before sending; at most 100 per number per day, 20–40 seconds apart; numbers already checked are not looked up again |
 | WhatsApp restricts a number | it rests at least 48 hours and its daily limit is halved (minimum 10) |
 | WhatsApp rate limit, or 5 failed sends in a row | the number rests 6 hours and the owner is notified |
-| Human-like behaviour | "online" only while sending, typing indicator, blue ticks 5–90 seconds after a lead's message |
+| Phone notifications | the engine never marks messages read and never shows the number "online", so the phone keeps getting notifications; only the typing indicator is shown before a message |
 
 Not possible for free: a different, residential IP per number. All numbers on a server share its data-centre IP (extra
 IPv6 addresses from the same /64 are treated by WhatsApp as the same network). The free way to get a home/office IP is

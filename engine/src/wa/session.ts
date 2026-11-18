@@ -291,6 +291,8 @@ export class WaSession {
     if (connection === 'open') {
       const wasDown = this.downSince;
       this.openedAt = Date.now();
+      // Never look "online": while a linked device is online, WhatsApp stops notifying the phone.
+      sock.sendPresenceUpdate('unavailable').catch(() => undefined);
       this.setPhase('open');
       this.attempts = 0;
       this.qrRounds = 0;
@@ -534,40 +536,6 @@ export class WaSession {
     await s.sendMessage(jid, { react: { text: emoji, key: { remoteJid: jid, id: target.id, fromMe: target.fromMe } } });
   }
 
-  private onlineTimer: NodeJS.Timeout | null = null;
-  private online = false;
-
-  /**
-   * Look like a person with WhatsApp Web open: "online" while messages go out, "offline" again after a quiet
-   * minute or two (until then the phone itself gets no notifications, as with WhatsApp Web).
-   */
-  private goOnline() {
-    const s = this.sock;
-    if (!s) return;
-    if (!this.online) {
-      this.online = true;
-      s.sendPresenceUpdate('available').catch(() => undefined);
-    }
-    if (this.onlineTimer) clearTimeout(this.onlineTimer);
-    this.onlineTimer = setTimeout(() => {
-      this.onlineTimer = null;
-      this.online = false;
-      this.sock?.sendPresenceUpdate('unavailable').catch(() => undefined);
-    }, 60_000 + Math.random() * 90_000);
-    this.onlineTimer.unref?.();
-  }
-
-  /** Blue ticks a few seconds to a minute after a lead's message arrives, as when someone glances at the chat. */
-  markReadSoon(key: WAMessageKey) {
-    const timer = setTimeout(() => {
-      const s = this.sock;
-      if (!s || this.phase !== 'open') return;
-      this.goOnline();
-      s.readMessages([key]).catch((e) => log.debug({ acc: this.accountId, err: errMsg(e) }, 'read receipt failed'));
-    }, 5_000 + Math.random() * 85_000);
-    timer.unref?.();
-  }
-
   /** Send a message, optionally showing "typing…" first. Returns the WhatsApp message id. */
   /** Ids of messages this engine sent recently, so WhatsApp's echo of them isn't saved a second time. */
   private readonly ownSends = new Map<string, number>();
@@ -591,7 +559,6 @@ export class WaSession {
         /* presence is best-effort */
       }
     }
-    this.goOnline();
     let payload: AnyMessageContent;
     if (content.mediaUrl && content.mediaType === 'image') {
       payload = { image: { url: content.mediaUrl }, caption: content.text || undefined };
